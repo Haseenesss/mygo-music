@@ -38,6 +38,11 @@ type settings struct {
 	// NotchVirtual keeps a notch of the app's own showing at the top of a
 	// display without one; else it shows only while the pointer asks.
 	NotchVirtual bool `json:"notchVirtual"`
+	// NotchDisplay and NotchDisplayID are the name and ID of the display
+	// the notch shows on, which the listener picks, the name for when the
+	// ID changes as it's plugged in again; none is the one with the menu bar.
+	NotchDisplay   string `json:"notchDisplay,omitempty"`
+	NotchDisplayID int64  `json:"notchDisplayID,omitempty"`
 	// NotchGreeted says the notch showed itself, once, as the first song
 	// played (greet).
 	NotchGreeted bool `json:"notchGreeted"`

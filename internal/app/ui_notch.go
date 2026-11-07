@@ -1,6 +1,8 @@
 package app
 
 import (
+	"cmp"
+	"fmt"
 	"runtime"
 	"time"
 
@@ -20,8 +22,9 @@ type notch struct {
 	a   *app
 	win *mygo.Window
 
-	w0, h0     float32 // the housing's size
-	real       bool    // the display has one: else the notch hides until wanted
+	display    mygo.Display // the one it shows on
+	w0, h0     float32      // the housing's size
+	real       bool         // the display has one: else the notch hides until wanted
 	winW, winH float32
 	screenX    float32 // the window's left on the screen
 	screenY    float32
@@ -35,6 +38,7 @@ type notch struct {
 	unwatch    func() // stops them polling, nil while they don't
 	active     bool   // the app is active, when they go unseen over the menu bar
 	polling    bool   // a poll is due
+	moves      int    // its moves to another display, the last one of which shows it
 
 	bars  barState
 	scrub scrubState
@@ -48,9 +52,8 @@ const (
 
 func newNotch(a *app) *notch {
 	n := &notch{a: a}
-	n.measure()
 	n.winW, n.winH = notchOpenW+60, 240
-	n.place()
+	n.locate()
 	n.win = mygo.NewWindow(mygo.WindowOptions{
 		Title:         Tf("%s Mini Player", mygo.App.Name()),
 		Panel:         true,
@@ -76,12 +79,11 @@ func newNotch(a *app) *notch {
 	n.passing = true
 	if a.settings.Notch {
 		n.win.ShowInactive()
-		pinToTop(n.win.NativeHandle(), float64(n.winW), float64(n.winH))
+		n.pin()
 	}
 	mygo.Screen.OnDisplaysChanged(func() {
-		n.measure()
-		n.place()
-		pinToTop(n.win.NativeHandle(), float64(n.winW), float64(n.winH))
+		n.locate()
+		a.redraw() // the settings list the displays
 	})
 	// The pointer's moves wake the notch: it polls only while one may
 	// soon open or close it, and costs nothing at rest.
@@ -107,12 +109,128 @@ func (n *notch) watch() {
 	}
 }
 
-// measure finds the housing of the display with the menu bar.
+// displays lists the connected displays, the one with the menu bar first;
+// tests replace it.
+var displays = func() []mygo.Display { return mygo.Screen.Displays() }
+
+// notchDisplay picks the display among ds the settings ask the notch to show
+// on: by its ID, else by its name, as the ID can change when it's plugged in
+// again, else the one with the menu bar, as when none was asked for or the
+// one asked for is gone.
+func notchDisplay(ds []mygo.Display, id int64, name string) mygo.Display {
+	if d, ok := pickedDisplay(ds, id, name); ok {
+		return d
+	}
+	for _, d := range ds {
+		if d.Primary {
+			return d
+		}
+	}
+	if len(ds) > 0 {
+		return ds[0]
+	}
+	return mygo.Display{}
+}
+
+// pickedDisplay finds the display picked in the settings among ds, by its
+// ID, else by its name, or false if none was picked or it is gone.
+func pickedDisplay(ds []mygo.Display, id int64, name string) (mygo.Display, bool) {
+	if name == "" {
+		return mygo.Display{}, false
+	}
+	for _, d := range ds {
+		if d.ID == id {
+			return d, true
+		}
+	}
+	for _, d := range ds {
+		if d.Label == name {
+			return d, true
+		}
+	}
+	return mygo.Display{}, false
+}
+
+// displayPick is a display the notch can be put on, in the settings.
+type displayPick struct {
+	label  string // as the settings show it
+	name   string // as the settings keep it: none for the main display
+	id     int64
+	chosen bool
+	gone   bool // picked, but not connected
+}
+
+// notchDisplayPicks lists the displays the notch can be put on: the main
+// one, whichever it is, then each connected one, then the one picked if it
+// is gone, so the setting shows as kept until it's back.
+func notchDisplayPicks(ds []mygo.Display, id int64, name string) []displayPick {
+	picks := []displayPick{{label: T("Main Display")}}
+	at, found := pickedDisplay(ds, id, name)
+	seen := map[string]int{}
+	for i, d := range ds {
+		label := d.Label
+		if label == "" {
+			label = Tf("Display %d", i+1)
+		}
+		// Two of the same make: the select tells them apart by label.
+		if seen[label]++; seen[label] > 1 {
+			label = fmt.Sprintf("%s (%d)", label, seen[label])
+		}
+		chosen := found && d.ID == at.ID
+		picks = append(picks, displayPick{label: label, name: cmp.Or(d.Label, label), id: d.ID, chosen: chosen})
+	}
+	switch {
+	case name == "":
+		picks[0].chosen = true
+	case !found:
+		picks = append(picks, displayPick{label: Tf("%s (Not Connected)", name), name: name, id: id, chosen: true, gone: true})
+	}
+	return picks
+}
+
+// locate moves the notch to the display the settings ask for, as they
+// change or displays come and go.
+func (n *notch) locate() {
+	s := n.a.settings
+	from := n.display.ID
+	n.display = notchDisplay(displays(), s.NotchDisplayID, s.NotchDisplay)
+	n.measure()
+	n.place()
+	if n.win == nil {
+		return // as in tests
+	}
+	if n.display.ID == from || !n.win.IsVisible() {
+		n.pin()
+		return
+	}
+	// Moved to a display of another scale, the window would show its last
+	// frame, drawn for the one it left, beside the new one until it draws
+	// again: it shows again only once it has.
+	n.moves++
+	move := n.moves
+	n.win.SetOpacity(0)
+	n.pin()
+	n.win.Invalidate()
+	time.AfterFunc(150*time.Millisecond, func() {
+		mygo.RunOnMain(func() {
+			if n.moves == move {
+				n.win.SetOpacity(1)
+			}
+		})
+	})
+}
+
+// pin puts the window where place says, over the menu bar.
+func (n *notch) pin() {
+	pinToTop(n.win.NativeHandle(), n.display.ID, float64(n.winW), float64(n.winH))
+}
+
+// measure finds the housing of the notch's display.
 func (n *notch) measure() {
 	n.w0, n.h0, n.real = 200, 32, false
-	if w, h, ok := notchSize(); ok {
+	if w, h, ok := notchSize(n.display.ID); ok {
 		n.w0, n.h0, n.real = float32(w), float32(h), true
-	} else if h := menuBarHeight(); h > 0 {
+	} else if h := menuBarHeight(n.display.ID); h > 0 {
 		// A notch of its own, as high as the menu bar it hangs over.
 		n.h0 = float32(h)
 	}
@@ -121,10 +239,10 @@ func (n *notch) measure() {
 	}
 }
 
-// place centers the window at the top of the display with the menu bar,
-// where the pointer finds it.
+// place centers the window at the top of the notch's display, where the
+// pointer finds it.
 func (n *notch) place() {
-	d := mygo.Screen.PrimaryDisplay()
+	d := n.display
 	n.screenX = float32(d.Bounds.X) + (float32(d.Bounds.Width)-n.winW)/2
 	n.screenY = float32(d.Bounds.Y)
 }
@@ -142,7 +260,7 @@ func (n *notch) setEnabled(on bool) {
 	}
 	if on {
 		n.win.ShowInactive()
-		pinToTop(n.win.NativeHandle(), float64(n.winW), float64(n.winH))
+		n.pin()
 		n.watch()
 		n.poll()
 		return
@@ -167,7 +285,7 @@ func (n *notch) greet() {
 		return // as in tests
 	}
 	n.win.ShowInactive()
-	pinToTop(n.win.NativeHandle(), float64(n.winW), float64(n.winH))
+	n.pin()
 	n.watch()
 	n.poll()
 	n.byeSoon(7 * time.Second)
