@@ -75,7 +75,26 @@ func Fetch(u string) ([]byte, error) {
 	if res.StatusCode != http.StatusOK {
 		return nil, errors.New(res.Status)
 	}
-	return io.ReadAll(io.LimitReader(res.Body, maxFetch))
+	return readBody(res)
+}
+
+// readBody reads a response's body, up to maxFetch, into a buffer of the
+// size it says it is: io.ReadAll grows one as it goes, which for a cover
+// of a few MB leaves twice as much again behind for the GC.
+func readBody(res *http.Response) ([]byte, error) {
+	body := io.LimitReader(res.Body, maxFetch)
+	if n := res.ContentLength; n <= 0 || n > maxFetch {
+		return io.ReadAll(body)
+	}
+	b := make([]byte, res.ContentLength)
+	got, err := io.ReadFull(body, b)
+	if err != nil {
+		return b[:got], err
+	}
+	// Read on to the end, as ReadAll did: a body longer than it said is
+	// an error the transport reports there.
+	rest, err := io.ReadAll(body)
+	return append(b, rest...), err
 }
 
 // HeadersStay returns client, or, with headers to send, one like it that

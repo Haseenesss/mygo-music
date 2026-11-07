@@ -72,7 +72,7 @@ type artCache struct {
 const artLimit = 64 << 20
 
 func newArtCache(post func(func())) *artCache {
-	return &artCache{art: map[string]*artwork{}, gone: map[string]weak.Pointer[artwork]{}, busy: map[string]bool{}, loads: map[string]*artLoad{}, sources: map[string]*artSource{}, sem: make(chan struct{}, 8), pixels: newPixelBudget(decodePixels), post: post, now: time.Now, limit: artLimit}
+	return &artCache{art: map[string]*artwork{}, gone: map[string]weak.Pointer[artwork]{}, busy: map[string]bool{}, loads: map[string]*artLoad{}, sources: map[string]*artSource{}, sem: make(chan struct{}, 8), pixels: newPixelBudget(decodeBudget), post: post, now: time.Now, limit: artLimit}
 }
 
 // add keeps a cover, and drops those asked for least recently once the
@@ -236,7 +236,7 @@ func (c *artCache) load(key string, l *artLoad) {
 			return
 		}
 		l.pixels = coverPixels(s.data)
-		took := c.pixels.take(l.pixels)
+		took := c.pixels.take(decodeCost(s.data, px))
 		l.bmp, l.img, l.size, l.err = artOf(s.data, px)
 		c.pixels.give(took)
 		if l.err == nil {
@@ -244,13 +244,6 @@ func (c *artCache) load(key string, l *artLoad) {
 		}
 	})
 }
-
-// decodePixels is how many pixels of covers decode at once: a cover as a
-// source gives it can be 3000 pixels across, which decodes into some
-// 25 MB before it shrinks to a row's, and eight of those at once took
-// hundreds of megabytes. Small covers decode eight at a time as before;
-// covers that big, two or three.
-const decodePixels = 24 << 20
 
 // coverPixels returns how many pixels the cover of data has, or 0 if its
 // header doesn't say.
@@ -299,23 +292,132 @@ func (c *artCache) tidyUp() {
 	c.tidy = t
 }
 
-// pixelBudget lets those that take pixels of it go on while they fit.
-type pixelBudget struct {
-	mu         sync.Mutex
-	cond       sync.Cond
-	free, size int
+// decodeBudget is how many bytes the covers decoding at once may take
+// between them. A cover decodes whole whatever size it shows at, and
+// shrinking it takes a buffer as tall as it is: one of 3000 pixels takes
+// some 45 MB to become a row's thumbnail. Eight at once, as a page of
+// them loads, took hundreds, which the heap kept long after. Those small
+// as most are decode side by side; big ones take turns.
+const decodeBudget = 48 << 20
+
+// decodeCost guesses the bytes decoding data to show at px takes, from its
+// size and kind: its pixels as the decoder keeps them, what a progressive
+// JPEG keeps besides, and then either the buffer shrinkArt scales them
+// through or the bitmap that decodes them again.
+func decodeCost(data []byte, px int) int {
+	data = stillCover(data)
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return 0
+	}
+	pixels := cfg.Width * cfg.Height
+	n := pixels * bytesPerPixel(cfg.ColorModel)
+	switch {
+	case format == "jpeg" && progressiveJPEG(data):
+		// Its coefficients, an int32 each, at full size for 4:4:4.
+		n += pixels * 4 * jpegComponents(cfg.ColorModel)
+	case format == "png" && interlacedPNG(data):
+		n *= 2 // its seven passes, each an image, then the whole
+	case format == "webp":
+		// A lossless one decodes to NRGBA, whatever an extended header
+		// says, spreading a palette out in another buffer as big.
+		n = pixels * 8
+	}
+	if px > 0 && max(cfg.Width, cfg.Height) > px*3/2 {
+		n += px*cfg.Height*32 + px*px*4 // draw's [4]float64 a pixel, px wide
+	} else {
+		// Decoded twice, once as the bitmap's RGBA, and turned upright in
+		// another as its EXIF says.
+		n += n + pixels*8
+	}
+	return n + n/8 // and the decoders' buffers, and the copy encoded
 }
 
-func newPixelBudget(size int) *pixelBudget {
-	b := &pixelBudget{free: size, size: size}
+// bytesPerPixel is how many bytes a decoder keeps a pixel of model in, at
+// most: a JPEG's chroma may be smaller, never bigger.
+func bytesPerPixel(model color.Model) int {
+	switch model {
+	case color.GrayModel:
+		return 1
+	case color.Gray16Model:
+		return 2
+	case color.YCbCrModel:
+		return 3
+	case color.RGBA64Model, color.NRGBA64Model:
+		return 8
+	case color.CMYKModel:
+		return 8 // the JPEG's planes as they came, then the CMYK of them
+	}
+	if _, ok := model.(color.Palette); ok {
+		return 1
+	}
+	return 4
+}
+
+func jpegComponents(model color.Model) int {
+	switch model {
+	case color.GrayModel:
+		return 1
+	case color.CMYKModel:
+		return 4
+	}
+	return 3
+}
+
+// progressiveJPEG says whether the JPEG b is progressive, as its frame
+// header says, which comes before its first scan. It steps over what the
+// decoder does: stray bytes between segments, "\xff\x00", fill bytes, and
+// restart markers, which have no length.
+func progressiveJPEG(b []byte) bool {
+	for i := 2; i+1 < len(b); {
+		if b[i] != 0xFF {
+			i++
+			continue
+		}
+		switch m := b[i+1]; {
+		case m == 0xFF:
+			i++
+			continue
+		case m == 0x00, m >= 0xD0 && m <= 0xD7:
+			i += 2
+			continue
+		case m == 0xC2 || m == 0xC6 || m == 0xCA || m == 0xCE:
+			return true
+		case m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC, m == 0xD9, m == 0xDA:
+			return false
+		}
+		if i+4 > len(b) {
+			return false
+		}
+		i += 2 + (int(b[i+2])<<8 | int(b[i+3]))
+	}
+	return false
+}
+
+// interlacedPNG says whether the PNG b is interlaced, as its header says.
+func interlacedPNG(b []byte) bool {
+	return len(b) > 28 && string(b[12:16]) == "IHDR" && b[28] != 0
+}
+
+// pixelBudget hands out bytes for decoding, up to a total: those who ask
+// for more than is free wait for others to give theirs back.
+type pixelBudget struct {
+	mu    sync.Mutex
+	cond  sync.Cond
+	free  int
+	total int
+}
+
+func newPixelBudget(total int) *pixelBudget {
+	b := &pixelBudget{free: total, total: total}
 	b.cond.L = &b.mu
 	return b
 }
 
-// take waits until n pixels are free, and takes them: all of them, for
-// more than there are. It returns how many it took, to give back.
+// take waits for n bytes, or all of them for more than there are, and
+// returns how many it took, for give.
 func (b *pixelBudget) take(n int) int {
-	n = min(n, b.size)
+	n = min(max(n, 0), b.total)
 	b.mu.Lock()
 	for b.free < n {
 		b.cond.Wait()
@@ -328,8 +430,8 @@ func (b *pixelBudget) take(n int) int {
 func (b *pixelBudget) give(n int) {
 	b.mu.Lock()
 	b.free += n
-	b.mu.Unlock()
 	b.cond.Broadcast()
+	b.mu.Unlock()
 }
 
 // artRelease is how long a cover keeps its pixels once loaded: past the

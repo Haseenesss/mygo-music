@@ -2,14 +2,18 @@ package app
 
 import (
 	"bytes"
+	"encoding/binary"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"runtime"
 	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -70,6 +74,155 @@ func TestBigCoverThumbnailSkipsFullBitmap(t *testing.T) {
 	// 1.5 more; a full RGBA bitmap took 4, and decoding it again 1.5.
 	if got, budget := after.TotalAlloc-before.TotalAlloc, uint64(4*n*n); got > budget {
 		t.Errorf("loading a 96-pixel thumbnail of a %d-pixel cover allocated %d bytes, budget %d", n, got, budget)
+	}
+}
+
+// Big covers loading at once take turns to decode. A page of eight
+// 3000-pixel covers decoded them side by side, which took some 180 MB of
+// heap at its peak, and the heap kept it.
+func TestArtCacheDecodesBigCoversInTurn(t *testing.T) {
+	const n = 3000
+	src := image.NewRGBA(image.Rect(0, 0, n, n))
+	for y := range n {
+		for x := range n {
+			src.SetRGBA(x, y, color.RGBA{uint8(x / 12), uint8(y / 12), uint8((x + y) / 24), 255})
+		}
+	}
+	var data bytes.Buffer
+	if err := jpeg.Encode(&data, src, nil); err != nil {
+		t.Fatal(err)
+	}
+	src = nil
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(data.Len()))
+		w.Write(data.Bytes())
+	}))
+	defer srv.Close()
+
+	const covers = 8
+	posts := make(chan func(), covers)
+	c := newArtCache(func(fn func()) { posts <- fn })
+	runtime.GC()
+	var peak atomic.Uint64
+	stop := make(chan struct{})
+	sampled := make(chan struct{})
+	go func() {
+		defer close(sampled)
+		var m runtime.MemStats
+		for {
+			runtime.ReadMemStats(&m)
+			if m.HeapInuse > peak.Load() {
+				peak.Store(m.HeapInuse)
+			}
+			select {
+			case <-stop:
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
+		}
+	}()
+	for i := range covers {
+		c.get(sized(fmt.Sprintf("%s/%d.jpg", srv.URL, i), 96), false)
+	}
+	// Side by side they take a while, which is not what this checks.
+	for range covers {
+		select {
+		case fn := <-posts:
+			fn()
+		case <-time.After(30 * time.Second):
+			t.Fatal("the covers did not load")
+		}
+	}
+	close(stop)
+	<-sampled
+	if got, budget := peak.Load(), uint64(100<<20); got > budget {
+		t.Errorf("loading %d thumbnails of %d-pixel covers at once took %d MB of heap, budget %d MB", covers, n, got>>20, budget>>20)
+	}
+}
+
+// What a cover's decoding is reckoned to take covers what it does take,
+// whatever the kind of cover, for the budget to hold. A progressive JPEG
+// keeps its coefficients besides its pixels, a 16-bit PNG takes twice the
+// bytes a pixel and an interlaced one its passes too, and a rotated JPEG
+// turns upright in a copy, a CMYK one converts in another, and a lossless
+// WebP spreads its palette out in another: reckoned as a plain JPEG, they took up to three times what they
+// were given.
+func TestDecodeCostCoversDecoding(t *testing.T) {
+	const n = 800
+	var baseline, deep bytes.Buffer
+	src := image.NewRGBA64(image.Rect(0, 0, n, n))
+	for y := range n {
+		for x := range n {
+			src.SetRGBA64(x, y, color.RGBA64{uint16(x * 80), uint16(y * 80), uint16((x + y) * 40), 0xffff})
+		}
+	}
+	if err := jpeg.Encode(&baseline, src, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(&deep, src); err != nil {
+		t.Fatal(err)
+	}
+	progressive, err := os.ReadFile("testdata/progressive.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	interlaced, err := os.ReadFile("testdata/interlaced.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A stray byte after SOI, which the decoder steps over.
+	stray := append([]byte{0xFF, 0xD8, 0x01}, progressive[2:]...)
+	// EXIF orientation 6, which turns the bitmap upright in a copy, on a
+	// 4:4:4 JPEG, whose chroma takes all it is reckoned to.
+	full, err := os.ReadFile("testdata/baseline444.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	exif := []byte("\xff\xe1\x00\x22Exif\x00\x00MM\x00\x2a\x00\x00\x00\x08\x00\x01\x01\x12\x00\x03\x00\x00\x00\x01\x00\x06\x00\x00\x00\x00\x00\x00")
+	rotated := append(append([]byte{0xFF, 0xD8}, exif...), full[2:]...)
+	// A CMYK JPEG, whose decoder keeps its planes as they came while it
+	// makes the CMYK image of them.
+	cmyk, err := os.ReadFile("testdata/cmyk.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A lossless WebP of 16 colors, its palette spread out as it decodes,
+	// under an extended header, which says YCbCr whatever is under it.
+	lossless, err := os.ReadFile("testdata/palette.webp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	vp8x := []byte{'V', 'P', '8', 'X', 10, 0, 0, 0, 0, 0, 0, 0, 0x1f, 0x03, 0, 0x1f, 0x03, 0} // 800×800, less one
+	body := append(append([]byte("WEBP"), vp8x...), lossless[12:]...)
+	extended := binary.LittleEndian.AppendUint32([]byte("RIFF"), uint32(len(body)))
+	extended = append(extended, body...)
+	for _, c := range []struct {
+		name string
+		data []byte
+	}{
+		{"baseline JPEG", baseline.Bytes()},
+		{"progressive JPEG", progressive},
+		{"progressive JPEG with a stray byte", stray},
+		{"rotated JPEG", rotated},
+		{"CMYK JPEG", cmyk},
+		{"16-bit PNG", deep.Bytes()},
+		{"interlaced 16-bit PNG", interlaced},
+		{"lossless WebP", lossless},
+		{"lossless WebP, extended", extended},
+	} {
+		for _, px := range []int{96, n} {
+			cost := decodeCost(c.data, px)
+			runtime.GC()
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			if _, _, _, err := artOf(c.data, px); err != nil {
+				t.Fatal(err)
+			}
+			runtime.ReadMemStats(&after)
+			if took := int(after.TotalAlloc - before.TotalAlloc); took > cost {
+				t.Errorf("%s at %d pixels took %d KB, reckoned %d KB", c.name, px, took>>10, cost>>10)
+			}
+		}
 	}
 }
 
