@@ -12,9 +12,19 @@ const Topic = "mygo-music-plugin"
 
 // Listing is a repository with the topic, as GitHub lists it.
 type Listing struct {
-	Repo        string // owner/repo
-	Description string
-	Stars       int
+	Repo        string `json:"repo"` // owner/repo
+	Description string `json:"description,omitempty"`
+	Stars       int    `json:"stars,omitempty"`
+}
+
+// officialOwner is who makes MyGo Music, whose plugins are its own.
+const officialOwner = "egoist"
+
+// Official reports whether a repository's plugin is MyGo Music's own, by who
+// owns it; the others are the community's, which nobody reviewed.
+func Official(repo string) bool {
+	owner, _, _ := strings.Cut(repo, "/")
+	return strings.EqualFold(owner, officialOwner)
 }
 
 // listedPages is how many pages of 100 Listed asks GitHub for at most; its
