@@ -375,6 +375,21 @@ type SignInPrompt struct {
 	QR string `json:"qr,omitempty"`
 	// Text says what to do, or how it's going.
 	Text string `json:"text,omitempty"`
+	// URL is the page to sign in on, in the listener's browser, which the
+	// dialog shows whole to copy, as to another browser, or to open again.
+	URL string `json:"url,omitempty"`
+	// Input, if any, is what a field of the dialog asks for, as its
+	// placeholder: what the listener brings back from the browser, such as
+	// the address it ended on. The source gets it with SignInInput.
+	Input string `json:"input,omitempty"`
+	// Submit is the field's button, "Sign In" if none.
+	Submit string `json:"submit,omitempty"`
+}
+
+// An Answerer is a Prompter that takes what the listener fills in the field
+// its prompt asks for.
+type Answerer interface {
+	SignInInput(text string)
 }
 
 // A Prompter is a source that has something to show while signing in.

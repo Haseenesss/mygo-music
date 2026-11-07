@@ -718,3 +718,168 @@ func TestLoadKeepsToItsFolders(t *testing.T) {
 		}
 	}
 }
+
+// What the listener fills in the sign-in dialog's field reaches the plugin
+// signing in, whether it was waiting yet or not, along with the link it shows.
+func TestSignInInput(t *testing.T) {
+	p := load(t, `{"id":"x"}`, `
+export async function signIn() {
+  host.signInPrompt({ text: "Paste it", url: "https://example.com/auth", input: "Callback URL", submit: "Finish" });
+  const first = await host.signInInput();
+  host.signInPrompt({ text: "Again", input: "Callback URL" });
+  const second = await host.signInInput();
+  return { id: first, name: second };
+}`)
+	prompts := make(chan music.SignInPrompt, 2)
+	p.OnSignInPrompt(func(pr music.SignInPrompt) { prompts <- pr })
+	type result struct {
+		a   *music.Account
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		a, err := p.SignIn()
+		ch <- result{a, err}
+	}()
+	pr := <-prompts
+	if pr.URL != "https://example.com/auth" || pr.Input != "Callback URL" || pr.Submit != "Finish" {
+		t.Fatalf("prompt: %+v", pr)
+	}
+	// Filled in before the plugin asked: kept for it.
+	p.SignInInput("one")
+	if pr := <-prompts; pr.Text != "Again" {
+		t.Fatalf("second prompt: %+v", pr)
+	}
+	p.SignInInput("two")
+	select {
+	case r := <-ch:
+		if r.err != nil || r.a.ID != "one" || r.a.Name != "two" {
+			t.Fatalf("signIn: %+v, %v", r.a, r.err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("signIn didn't get what was filled in")
+	}
+}
+
+func TestSignInInputRetired(t *testing.T) {
+	// A field waited on by a sign-in that another started after is rejected, also when asked for late, and the new one gets what's filled in.
+	p := load(t, `{"id":"x"}`, `
+let started;
+const second = new Promise((r) => (started = r));
+export async function signIn({ attempt }) {
+  if (attempt === 1) {
+    const early = host.signInInput(attempt);
+    host.signInPrompt({ text: "1" });
+    const first = await early.catch((e) => String(e));
+    await second;
+    const late = await host.signInInput(attempt).catch((e) => String(e));
+    return { id: first, name: late };
+  }
+  const pasted = host.signInInput(attempt);
+  started();
+  host.signInPrompt({ text: "2", input: "Cookie" });
+  return { id: await pasted, name: "2" };
+}`)
+	prompts := make(chan music.SignInPrompt, 2)
+	p.OnSignInPrompt(func(pr music.SignInPrompt) { prompts <- pr })
+	type result struct {
+		a   *music.Account
+		err error
+	}
+	signIn := func() chan result {
+		ch := make(chan result, 1)
+		go func() {
+			a, err := p.SignIn()
+			ch <- result{a, err}
+		}()
+		return ch
+	}
+	first := signIn()
+	<-prompts
+	second := signIn()
+	<-prompts
+	p.SignInInput("pasted")
+	for _, c := range []struct {
+		ch       chan result
+		id, name string
+	}{{first, "another sign-in started", "another sign-in started"}, {second, "pasted", "2"}} {
+		select {
+		case r := <-c.ch:
+			if r.err != nil || !strings.Contains(r.a.ID, c.id) || !strings.Contains(r.a.Name, c.name) {
+				t.Fatalf("signIn: %+v, %v", r.a, r.err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("signIn didn't finish")
+		}
+	}
+}
+
+func TestSignInInputForgottenOnClose(t *testing.T) {
+	// Closing the plugin lets go of what its runtime waited on, rather than keep the runtime.
+	p := load(t, `{"id":"x"}`, `
+export async function signIn({ attempt }) {
+  const pasted = host.signInInput(attempt);
+  host.signInPrompt({ text: "Paste it", input: "Cookie" });
+  return { id: await pasted, name: "n" };
+}`)
+	prompts := make(chan music.SignInPrompt, 1)
+	p.OnSignInPrompt(func(pr music.SignInPrompt) { prompts <- pr })
+	go p.SignIn()
+	<-prompts
+	p.Close()
+	p.mu.Lock()
+	n := len(p.answers)
+	p.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("%d waiting after close", n)
+	}
+}
+
+func TestSignInPromptWebOnly(t *testing.T) {
+	// A sign-in link that isn't http or https is refused, so the dialog never shows or copies it.
+	p := load(t, `{"id":"x"}`, `
+export async function signIn() {
+  host.signInPrompt({ text: "Open it", url: "file:///etc/passwd" });
+  return { id: "a", name: "n" };
+}`)
+	shown := false
+	p.OnSignInPrompt(func(music.SignInPrompt) { shown = true })
+	if _, err := p.SignIn(); err == nil || !strings.Contains(err.Error(), "not a web address") {
+		t.Fatalf("signIn: %v", err)
+	}
+	if shown {
+		t.Fatal("prompt with a file link was shown")
+	}
+}
+
+func TestSignInInputOnlyLast(t *testing.T) {
+	// With two fields waited on, what's filled in goes to the last one and the other is rejected.
+	p := load(t, `{"id":"x"}`, `
+export async function signIn() {
+  const older = host.signInInput().then((v) => "got " + v, (e) => String(e));
+  const newer = host.signInInput();
+  host.signInPrompt({ text: "Paste it", input: "Cookie" });
+  return { id: await newer, name: await older };
+}`)
+	prompts := make(chan music.SignInPrompt, 1)
+	p.OnSignInPrompt(func(pr music.SignInPrompt) { prompts <- pr })
+	type result struct {
+		a   *music.Account
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		a, err := p.SignIn()
+		ch <- result{a, err}
+	}()
+	<-prompts
+	p.SignInInput("one")
+	select {
+	case r := <-ch:
+		if r.err != nil || r.a.ID != "one" || !strings.Contains(r.a.Name, "another sign-in started") {
+			t.Fatalf("signIn: %+v, %v", r.a, r.err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("signIn didn't finish")
+	}
+}

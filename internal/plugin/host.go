@@ -111,7 +111,7 @@ func (p *Plugin) installHost(v *vm) error {
 		"openURL": moejs.NativeFunc(func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
 			address := moejs.Arg(args, 0).String()
 			// Only pages: a plugin can't have the system open just anything.
-			if u, err := url.Parse(address); err != nil || (u.Scheme != "https" && u.Scheme != "http") {
+			if !webAddress(address) {
 				return moejs.Undefined(), fmt.Errorf("not a web address: %s", address)
 			}
 			return moejs.Undefined(), openURL(address)
@@ -120,6 +120,10 @@ func (p *Plugin) installHost(v *vm) error {
 			var prompt music.SignInPrompt
 			if err := v.rt.ToGoInto(moejs.Arg(args, 0), &prompt); err != nil {
 				return moejs.Undefined(), err
+			}
+			// The dialog opens its link as openURL would, so it takes no other.
+			if prompt.URL != "" && !webAddress(prompt.URL) {
+				return moejs.Undefined(), fmt.Errorf("not a web address: %s", prompt.URL)
 			}
 			p.mu.Lock()
 			show := p.prompt
@@ -151,6 +155,7 @@ func (p *Plugin) installHost(v *vm) error {
 			return moejs.Undefined(), os.RemoveAll(filepath.Join(p.data, name))
 		}),
 		"waitForRedirect": moejs.NativeFunc(p.waitForRedirect(v)),
+		"signInInput":     moejs.NativeFunc(p.signInInput(v)),
 		"webSignIn":       moejs.NativeFunc(p.webSignIn(v)),
 		"spawn":           moejs.NativeFunc(p.spawn(v)),
 	})
@@ -187,6 +192,59 @@ func (p *Plugin) storageRemove(_ *moejs.Realm, _ moejs.Value, args []moejs.Value
 	defer p.mu.Unlock()
 	delete(p.storage, moejs.Arg(args, 0).String())
 	return moejs.Undefined(), p.writeJSON("storage.json", p.storage)
+}
+
+// webAddress says whether address is a page's, which is all a plugin may have
+// the system open.
+func webAddress(address string) bool {
+	u, err := url.Parse(address)
+	return err == nil && (u.Scheme == "https" || u.Scheme == "http")
+}
+
+// signInInput answers, once the listener fills it in, the field of the sign-in
+// dialog that host.signInPrompt asked for with input.
+func (p *Plugin) signInInput(v *vm) native {
+	return func(_ *moejs.Realm, _ moejs.Value, args []moejs.Value) (moejs.Value, error) {
+		promise, settle := v.loop.NewPromise()
+		w := answerWaiter{
+			vm: v,
+			answer: func(text string) {
+				settle(func(rt *moejs.Runtime) (moejs.Value, error) { return moejs.String(text), nil })
+			},
+			retire: func() {
+				settle(func(rt *moejs.Runtime) (moejs.Value, error) {
+					return moejs.Undefined(), errors.New("another sign-in started")
+				})
+			},
+		}
+		p.mu.Lock()
+		// The sign-in it's of is the attempt signIn was called with, or else
+		// the one going on.
+		w.signIn = p.signIns
+		if n, ok := moejs.Arg(args, 0).IsInt32(); ok {
+			w.signIn = int(n)
+		}
+		if w.signIn != p.signIns {
+			p.mu.Unlock()
+			w.retire()
+			return promise, nil
+		}
+		// A runtime being stopped waits on nothing more: what it waited on
+		// already is let go of once it's no longer the plugin's.
+		if p.vm != v {
+			p.mu.Unlock()
+			return promise, nil
+		}
+		if was := p.answered; was != nil {
+			p.answered = nil
+			p.mu.Unlock()
+			w.answer(*was)
+			return promise, nil
+		}
+		p.answers = append(p.answers, w)
+		p.mu.Unlock()
+		return promise, nil
+	}
 }
 
 // waitForRedirect is the end of a browser sign-in: it listens on this machine

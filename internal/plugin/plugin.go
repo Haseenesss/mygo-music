@@ -172,13 +172,75 @@ type Plugin struct {
 	granted  bool // the listener let it start programs
 	vm       *vm
 	prompt   func(music.SignInPrompt)
+	// signIns counts the calls to signIn, so host.signInInput knows the one it's
+	// of. answers wait on what the listener fills in the sign-in dialog's field,
+	// for it, and answered is one filled in while none waited.
+	signIns  int
+	answers  []answerWaiter
+	answered *string
 }
 
-// OnSignInPrompt says what to do with what the plugin wants shown as it signs in.
+// OnSignInPrompt says what to do with what the plugin wants shown as it signs
+// in. It's a sign-in anew: what was filled in for the last one is forgotten.
 func (p *Plugin) OnSignInPrompt(show func(music.SignInPrompt)) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.prompt = show
+	p.answered = nil
+	p.mu.Unlock()
+}
+
+// answerWaiter is a host.signInInput waiting, of the signIn call signIn of the
+// runtime vm: answered with what's filled in, or retired, which rejects it,
+// once another sign-in starts.
+type answerWaiter struct {
+	signIn int
+	vm     *vm
+	answer func(string)
+	retire func()
+}
+
+// startSignIn counts a call to signIn: the ones before it still waiting for
+// the dialog's field get nothing more, as what's filled in from now on is
+// this one's.
+func (p *Plugin) startSignIn() int {
+	p.mu.Lock()
+	p.signIns++
+	n := p.signIns
+	p.answered = nil
+	stale := p.answers
+	p.answers = nil
+	p.mu.Unlock()
+	for _, w := range stale {
+		w.retire()
+	}
+	return n
+}
+
+// forgetAnswers lets go of what of v waits on the dialog's field, once v stopped.
+func (p *Plugin) forgetAnswers(v *vm) {
+	p.mu.Lock()
+	p.answers = slices.DeleteFunc(p.answers, func(w answerWaiter) bool { return w.vm == v })
+	p.mu.Unlock()
+}
+
+// SignInInput hands what the listener filled in the sign-in dialog to
+// host.signInInput of the sign-in going on: to the one that waited last, or
+// else to the next call. Only one gets it: the others are rejected.
+func (p *Plugin) SignInInput(text string) {
+	p.mu.Lock()
+	waiting := p.answers
+	p.answers = nil
+	if len(waiting) == 0 {
+		p.answered = &text
+	}
+	p.mu.Unlock()
+	for i, w := range waiting {
+		if i == len(waiting)-1 {
+			w.answer(text)
+		} else {
+			w.retire()
+		}
+	}
 }
 
 // Load reads and compiles the plugin in dir, keeping its data in dataDir,
@@ -365,6 +427,7 @@ func (p *Plugin) Close() {
 	p.vm = nil
 	p.mu.Unlock()
 	if v != nil {
+		p.forgetAnswers(v)
 		v.close()
 	}
 }
@@ -636,6 +699,7 @@ func (p *Plugin) drop(v *vm) {
 		p.vm = nil
 	}
 	p.mu.Unlock()
+	p.forgetAnswers(v)
 	// Terminate waits for the loop, which the plugin may be keeping busy; it
 	// interrupts it first, so this ends, but needn't hold up the caller.
 	go v.close()
