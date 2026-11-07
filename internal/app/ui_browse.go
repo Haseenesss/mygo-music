@@ -133,46 +133,43 @@ const (
 	rowFeature rowKind = iota
 	rowTitle
 	rowTrack
-	rowAlbums
-	rowArtists
-	rowPlaylists
-	rowShows
-	rowStations
-	rowLinks
+	rowCards
 	rowEmpty
 )
+
+// cardCount is how many cards a section has, of whatever kinds: they fill its
+// rows one after another, so a few of one kind don't take a row of their own.
+func cardCount(sec *music.Section) int {
+	return len(sec.Albums) + len(sec.Artists) + len(sec.Playlists) + len(sec.Shows) + len(sec.Stations) + len(sec.Links)
+}
 
 // browseLayout lays out page in rows. The first section of Home, if tracks, is
 // the card that leads it.
 func browseLayout(page *music.Browse, pageID string, cols int) []browseRow {
 	var rows []browseRow
-	cards := func(kind rowKind, s, n int) {
-		for from := 0; from < n; from += cols {
-			rows = append(rows, browseRow{kind, s, from, min(from+cols, n)})
-		}
-	}
 	for s := range page.Sections {
 		sec := &page.Sections[s]
 		if s == 0 && pageID == "" && len(sec.Tracks) > 0 {
 			rows = append(rows, browseRow{rowFeature, s, 0, 0})
-			if len(sec.Albums)+len(sec.Artists)+len(sec.Playlists)+len(sec.Shows)+len(sec.Stations)+len(sec.Links) == 0 {
+			if cardCount(sec) == 0 {
 				continue
 			}
 		} else if sec.Title != "" || sec.MorePage != "" {
 			rows = append(rows, browseRow{rowTitle, s, 0, 0})
+		}
+		// A section of songs with a few cards among them, as a mix in Listen
+		// Again, has the cards under its title: after all its songs, they sat
+		// apart from it, over the next section's title.
+		n := cardCount(sec)
+		for from := 0; from < n; from += cols {
+			rows = append(rows, browseRow{rowCards, s, from, min(from+cols, n)})
 		}
 		if s != 0 || pageID != "" {
 			for i := range sec.Tracks {
 				rows = append(rows, browseRow{rowTrack, s, i, i})
 			}
 		}
-		cards(rowAlbums, s, len(sec.Albums))
-		cards(rowArtists, s, len(sec.Artists))
-		cards(rowPlaylists, s, len(sec.Playlists))
-		cards(rowShows, s, len(sec.Shows))
-		cards(rowStations, s, len(sec.Stations))
-		cards(rowLinks, s, len(sec.Links))
-		if sec.Empty != "" && len(sec.Tracks)+len(sec.Albums)+len(sec.Artists)+len(sec.Playlists)+len(sec.Shows)+len(sec.Stations)+len(sec.Links) == 0 {
+		if sec.Empty != "" && len(sec.Tracks)+cardCount(sec) == 0 {
 			rows = append(rows, browseRow{rowEmpty, s, 0, 0})
 		}
 	}
@@ -250,25 +247,45 @@ const cardRowGap = 28
 func (a *app) cardRow(c *ui.Context, sec *music.Section, r browseRow, cols int) {
 	ui.Grid(c).Columns(cols).GapX(20).Margin(0, 12, cardRowGap, 12).Children(func() {
 		for i := r.from; i < r.to; i++ {
-			switch r.kind {
-			case rowAlbums:
-				a.albumCard(c.Key(sec.Albums[i].ID), &sec.Albums[i])
-			case rowArtists:
-				a.artistCard(c.Key(sec.Artists[i].ID), &sec.Artists[i])
-			case rowPlaylists:
-				a.playlistCard(c.Key(sec.Playlists[i].ID), &sec.Playlists[i])
-			case rowShows:
-				a.showCard(c.Key(sec.Shows[i].ID), &sec.Shows[i])
-			case rowStations:
-				a.stationCard(c.Key(sec.Stations[i].ID), &sec.Stations[i])
-			case rowLinks:
-				l := &sec.Links[i]
-				if a.coverCard(c.Key(l.Page), l.Title, l.ImageURL, l.Subtitle, nil) {
-					a.open(route{page: pageBrowse, id: l.Page})
-				}
-			}
+			a.sectionCard(c, sec, i)
 		}
 	})
+}
+
+// sectionCard is a section's card i, counting its albums, then its artists,
+// playlists, shows, stations and links.
+func (a *app) sectionCard(c *ui.Context, sec *music.Section, i int) {
+	if i < len(sec.Albums) {
+		a.albumCard(c.Key("album:"+sec.Albums[i].ID), &sec.Albums[i])
+		return
+	}
+	i -= len(sec.Albums)
+	if i < len(sec.Artists) {
+		a.artistCard(c.Key("artist:"+sec.Artists[i].ID), &sec.Artists[i])
+		return
+	}
+	i -= len(sec.Artists)
+	if i < len(sec.Playlists) {
+		a.playlistCard(c.Key("playlist:"+sec.Playlists[i].ID), &sec.Playlists[i])
+		return
+	}
+	i -= len(sec.Playlists)
+	if i < len(sec.Shows) {
+		a.showCard(c.Key("show:"+sec.Shows[i].ID), &sec.Shows[i])
+		return
+	}
+	i -= len(sec.Shows)
+	if i < len(sec.Stations) {
+		a.stationCard(c.Key("station:"+sec.Stations[i].ID), &sec.Stations[i])
+		return
+	}
+	i -= len(sec.Stations)
+	if i < len(sec.Links) {
+		l := &sec.Links[i]
+		if a.coverCard(c.Key("link:"+l.Page), l.Title, l.ImageURL, l.Subtitle, nil) {
+			a.open(route{page: pageBrowse, id: l.Page})
+		}
+	}
 }
 
 // sectionOf finds the section a section's page shows.

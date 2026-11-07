@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -374,4 +375,50 @@ func TestLibraryChangedReloadsWhatShows(t *testing.T) {
 		t.Fatalf("asked for %q", page)
 	}
 	until(t, ch, func() bool { return a.browses["top"].page.Title == "Page top" })
+}
+
+// A section lays its cards of every kind out in the same rows. A playlist
+// after a few albums used to take a row of its own, as each kind started one,
+// so a section mixing them looked broken.
+func TestSectionCardsShareRows(t *testing.T) {
+	a := newTestApp()
+	var albums []music.Album
+	for i := range 3 {
+		albums = append(albums, music.Album{ID: fmt.Sprint(i), Name: fmt.Sprint("专辑", i)})
+	}
+	a.home = &music.Browse{Sections: []music.Section{{
+		Title:     "Mixed",
+		Albums:    albums,
+		Playlists: []music.Playlist{{ID: "1", Name: "歌单"}},
+		Artists:   []music.Artist{{ID: "2", Name: "歌手"}},
+	}}}
+	tt := ui.NewTester(a.view, 1600, 1200)
+	tt.Frame()
+	album, ok := tt.Find("专辑0")
+	list, ok2 := tt.Find("歌单")
+	if !ok || !ok2 || list.Y != album.Y {
+		t.Errorf("an album at %v, a playlist at %v", album, list)
+	}
+}
+
+// A section's cards come under its title, before its songs. A mix among
+// songs played lately came after them all, as if it were in no section.
+func TestSectionCardsBeforeSongs(t *testing.T) {
+	a := newTestApp()
+	var songs []music.Track
+	for i := range 4 {
+		songs = append(songs, song(fmt.Sprint(i), fmt.Sprint("歌", i)))
+	}
+	a.home = &music.Browse{Sections: []music.Section{
+		{Title: "First", Albums: []music.Album{{ID: "1", Name: "专辑"}}},
+		{Title: "Listen Again", Tracks: songs, Playlists: []music.Playlist{{ID: "2", Name: "我的超级合辑"}}},
+	}}
+	tt := ui.NewTester(a.view, 1200, 1600)
+	tt.Frame()
+	title, ok := tt.Find("Listen Again")
+	mix, ok2 := tt.Find("我的超级合辑")
+	first, ok3 := tt.Find("歌0")
+	if !ok || !ok2 || !ok3 || !(title.Y < mix.Y && mix.Y < first.Y) {
+		t.Errorf("title at %v, mix at %v, first song at %v", title, mix, first)
+	}
 }
