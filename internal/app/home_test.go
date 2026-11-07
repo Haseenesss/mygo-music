@@ -412,3 +412,25 @@ func TestHomeSectionCards(t *testing.T) {
 		t.Error("See All didn't show the rest")
 	}
 }
+
+// A section's cards come under its title, before its songs. A mix among
+// songs played lately came after them all, as if it were in no section.
+func TestSectionCardsBeforeSongs(t *testing.T) {
+	a := newTestApp()
+	var songs []music.Track
+	for i := range 4 {
+		songs = append(songs, song(fmt.Sprint(i), fmt.Sprint("歌", i)))
+	}
+	a.home = &music.Browse{Sections: []music.Section{
+		{Title: "First", Albums: []music.Album{{ID: "1", Name: "专辑"}}},
+		{Title: "Listen Again", Tracks: songs, Playlists: []music.Playlist{{ID: "2", Name: "我的超级合辑"}}},
+	}}
+	tt := ui.NewTester(a.view, 1200, 1600)
+	tt.Frame()
+	title, ok := tt.Find("Listen Again")
+	mix, ok2 := tt.Find("我的超级合辑")
+	first, ok3 := tt.Find("歌0")
+	if !ok || !ok2 || !ok3 || !(title.Y < mix.Y && mix.Y < first.Y) {
+		t.Errorf("title at %v, mix at %v, first song at %v", title, mix, first)
+	}
+}

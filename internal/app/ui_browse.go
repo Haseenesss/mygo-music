@@ -168,17 +168,20 @@ func browseLayout(page *music.Browse, pageID string, cols int, open func(sec *mu
 		} else if sec.Title != "" || sec.MorePage != "" || homeCapped(sec, pageID) {
 			rows = append(rows, browseRow{rowTitle, s, 0, 0})
 		}
-		if s != 0 || pageID != "" {
-			for i := range sec.Tracks {
-				rows = append(rows, browseRow{rowTrack, s, i, i})
-			}
-		}
+		// A section of songs with a few cards among them, as a mix in Listen
+		// Again, has the cards under its title: after all its songs, they sat
+		// apart from it, over the next section's title.
 		n := cardCount(sec)
 		if homeCapped(sec, pageID) && !open(sec) {
 			n = homeCards
 		}
 		for from := 0; from < n; from += cols {
 			rows = append(rows, browseRow{rowCards, s, from, min(from+cols, n)})
+		}
+		if s != 0 || pageID != "" {
+			for i := range sec.Tracks {
+				rows = append(rows, browseRow{rowTrack, s, i, i})
+			}
 		}
 		if sec.Empty != "" && len(sec.Tracks)+cardCount(sec) == 0 {
 			rows = append(rows, browseRow{rowEmpty, s, 0, 0})
