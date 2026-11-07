@@ -396,4 +396,6 @@ var zhCN = map[string]string{
 	"Singles & EPs":     "单曲和 EP",
 	"Show All %d Songs": "显示全部 %d 首歌曲",
 	"No songs":          "没有歌曲",
+
+	"Show Less": "收起",
 }

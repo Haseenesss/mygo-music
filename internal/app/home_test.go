@@ -455,3 +455,39 @@ func TestBackKeepsWhereHomeWasScrolled(t *testing.T) {
 		}
 	}
 }
+
+// A section of Home lays its cards of every kind out in the same rows, and
+// shows 8 of them until See All shows the rest in place. A playlist after a
+// few albums used to take a row of its own, as each kind started one.
+func TestHomeSectionCards(t *testing.T) {
+	a := newTestApp()
+	var albums []music.Album
+	for i := range 3 {
+		albums = append(albums, music.Album{ID: fmt.Sprint(i), Name: fmt.Sprint("专辑", i)})
+	}
+	var lists []music.Playlist
+	for i := range 7 {
+		lists = append(lists, music.Playlist{ID: fmt.Sprint(i), Name: fmt.Sprint("歌单", i)})
+	}
+	a.home = &music.Browse{Sections: []music.Section{{Title: "Mixed", Albums: albums, Playlists: lists}}}
+	tt := ui.NewTester(a.view, 1600, 1200)
+	tt.Frame()
+	album, ok := tt.Find("专辑0")
+	list, ok2 := tt.Find("歌单0")
+	if !ok || !ok2 || list.Y != album.Y {
+		t.Fatalf("an album at %v, a playlist at %v", album, list)
+	}
+	if _, ok := tt.Find("歌单4"); !ok {
+		t.Fatal("the 8th card doesn't show")
+	}
+	if _, ok := tt.Find("歌单5"); ok {
+		t.Fatal("more than 8 cards show")
+	}
+	if err := tt.Click("See All"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if _, ok := tt.Find("歌单6"); !ok {
+		t.Error("See All didn't show the rest")
+	}
+}
