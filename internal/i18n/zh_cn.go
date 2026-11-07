@@ -278,6 +278,14 @@ var zhCN = map[string]string{
 	"Download…":           "下载…",
 	"Downloaded %s":       "已下载《%s》",
 	"Downloading…":        "正在下载…",
+
+	"Plugin Store":                   "插件市场",
+	"Plugins on GitHub":              "GitHub 上的插件",
+	"Repositories with the topic %s": "带有 %s 话题的仓库",
+	"Looking on GitHub…":             "正在 GitHub 上查找…",
+	"Refresh":                        "刷新",
+	"Installed":                      "已安装",
+
 	"Write a repository as owner/repo, or its address on GitHub": "请填写 owner/repo，或仓库的 GitHub 地址",
 	"There's no such public repository on GitHub":                "GitHub 上没有这个公开仓库",
 	"From %s":             "来自 %s",

@@ -544,3 +544,45 @@ func TestRemove(t *testing.T) {
 		}
 	}
 }
+
+// The store's list skips archived repositories and those a later page lists
+// again, and stops at the last page.
+func TestListed(t *testing.T) {
+	var pages []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pages = append(pages, r.URL.Query().Get("page"))
+		if q := r.URL.Query().Get("q"); !strings.Contains(q, "topic:"+Topic) {
+			t.Errorf("searched for %q", q)
+		}
+		type item struct {
+			Name     string `json:"full_name"`
+			Stars    int    `json:"stargazers_count"`
+			Archived bool   `json:"archived"`
+		}
+		var items []item
+		if r.URL.Query().Get("page") == "1" {
+			for i := range 100 {
+				items = append(items, item{Name: fmt.Sprintf("o/p%d", i), Stars: 100 - i})
+			}
+			items[1].Archived = true
+		} else {
+			items = []item{{Name: "O/P0"}, {Name: "o/last"}}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"total_count": 102, "items": items})
+	}))
+	defer srv.Close()
+	was, wasToken := githubAPI, githubToken
+	defer func() { githubAPI, githubToken = was, wasToken }()
+	githubAPI, githubToken = srv.URL, func() string { return "" }
+
+	listed, err := Listed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 2 {
+		t.Errorf("asked for pages %q", pages)
+	}
+	if len(listed) != 100 || listed[0].Repo != "o/p0" || listed[1].Repo != "o/p2" || listed[99].Repo != "o/last" {
+		t.Errorf("listed %d: %v … %v", len(listed), listed[:2], listed[len(listed)-1])
+	}
+}
