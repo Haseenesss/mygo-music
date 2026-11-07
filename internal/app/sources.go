@@ -247,7 +247,7 @@ func (a *app) problem(lib *library, err error, msg string) string {
 		lib.needsSetup, lib.setupWords = true, music.Words(err)
 		if !lib.askedSetup {
 			lib.askedSetup = true
-			a.openSourceSettings()
+			a.openPluginSetup(lib)
 		}
 		// What it said says what to do, as a plugin's settings may not.
 		if lib.setupWords != "" {
@@ -268,7 +268,7 @@ func (a *app) actionFailed(lib *library, err error, msg string) {
 	case errors.Is(err, music.ErrSignIn):
 		a.promptSignIn(lib)
 	case errors.Is(err, music.ErrSetup):
-		a.openSourceSettings()
+		a.openPluginSetup(lib)
 	default:
 		a.toast = msg
 	}
