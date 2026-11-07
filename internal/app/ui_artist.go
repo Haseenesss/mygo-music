@@ -76,14 +76,16 @@ type artistData struct {
 	loading   bool
 	err       string
 	following bool // a follow or unfollow is on its way
-	tab       int  // what their page lists: artistSongs or artistAlbums
+	allSongs  bool // their page lists all their songs, not the first few
 }
 
-// What an artist's page lists.
-const (
-	artistSongs = iota
-	artistAlbums
-)
+// artistTopSongs is how many of an artist's songs their page lists until the
+// listener asks for all.
+const artistTopSongs = 10
+
+// singleOrEP reports whether a source says an album is a single or an EP,
+// which an artist's page lists apart from their albums.
+func singleOrEP(al *music.Album) bool { return al.Kind == "single" || al.Kind == "ep" }
 
 func (a *app) loadArtist(lib *library, id string) {
 	d := lib.artists[id]
@@ -139,7 +141,8 @@ func (a *app) toggleFollow(lib *library, d *artistData) {
 	}()
 }
 
-// artistPage shows who an artist is over their songs or their albums.
+// artistPage shows who an artist is over their top songs, then their albums,
+// and then their singles and EPs.
 func (a *app) artistPage(c *ui.Context) {
 	id := a.route.id
 	lib := a.library
@@ -157,25 +160,47 @@ func (a *app) artistPage(c *ui.Context) {
 		a.trackSkeleton(c, s, true, func(c *ui.Context) { a.artistHeaderSkeleton(c, s) })
 		return
 	}
-	header := func(c *ui.Context) { a.artistHeader(c, d) }
-	tab := d.tab
-	switch {
-	case len(d.page.Tracks) == 0:
-		tab = artistAlbums
-	case len(d.page.Albums) == 0:
-		tab = artistSongs
+	songs := d.page.Tracks
+	var albums, singles []music.Album
+	for _, al := range d.page.Albums {
+		if singleOrEP(&al) {
+			singles = append(singles, al)
+		} else {
+			albums = append(albums, al)
+		}
 	}
-	if tab == artistAlbums {
-		a.scrollPage(c, func() {
-			header(c)
-			a.albumGrid(c, d.page.Albums)
-			if len(d.page.Albums) == 0 {
-				a.empty(c, T("No albums"))
+	a.scrollPage(c, func() {
+		a.artistHeader(c, d)
+		if len(songs) > 0 {
+			a.section(c, T("Top Songs"))
+			shown := len(songs)
+			if !d.allSongs {
+				shown = min(shown, artistTopSongs)
 			}
-		})
-		return
-	}
-	a.trackRows(c, d.page.Tracks, true, header)
+			// The whole list plays on from the one clicked, shown or not.
+			for i := range shown {
+				a.trackRow(c, songs, i, true, "")
+			}
+			if shown < len(songs) {
+				ui.Row(c).Margin(10, 0, 0, 0).Children(func() {
+					if pillButton(c.Key("all-songs"), nil, Tf("Show All %d Songs", len(songs)), a.pal.hover.Over(a.pal.bg), a.pal.text).Clicked() {
+						d.allSongs = true
+					}
+				})
+			}
+		}
+		if len(albums) > 0 {
+			a.section(c, T("Albums"))
+			a.albumGrid(c.Key("albums"), albums)
+		}
+		if len(singles) > 0 {
+			a.section(c, T("Singles & EPs"))
+			a.albumGrid(c.Key("singles"), singles)
+		}
+		if len(songs) == 0 && len(d.page.Albums) == 0 {
+			a.empty(c, T("No songs"))
+		}
+	})
 }
 
 // scrollPage scrolls a page of cards and rows, inset as one of tracks is:
@@ -235,17 +260,6 @@ func (a *app) artistHeader(c *ui.Context, d *artistData) {
 			})
 		})
 	})
-	title := T("Songs")
-	if d.tab == artistAlbums || len(songs) == 0 {
-		title = T("Albums")
-	}
-	ui.Row(c).AlignItems(ui.Center).Margin(34, 0, 14, 0).Children(func() {
-		ui.Text(c, title).FontSize(19).FontWeight(700).LetterSpacing(-0.3)
-		ui.Spacer(c)
-		if len(songs) > 0 && len(d.page.Albums) > 0 {
-			segmented(c.Key("tab"), &d.tab, T("Songs"), T("Albums"))
-		}
-	})
 }
 
 func (a *app) artistHeaderSkeleton(c *ui.Context, s shimmer) {
@@ -265,5 +279,5 @@ func (a *app) artistHeaderSkeleton(c *ui.Context, s shimmer) {
 			})
 		})
 	})
-	a.section(c, T("Songs"))
+	a.section(c, T("Top Songs"))
 }
