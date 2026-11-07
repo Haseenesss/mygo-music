@@ -121,3 +121,55 @@ func macOnly(t *testing.T) {
 		t.Skip("the notch greets only on macOS")
 	}
 }
+
+// Picking a display in the settings moves the notch to the top of it, and
+// it goes back to the main display while that one is unplugged, and comes
+// back when it's plugged in again, under another ID.
+func TestNotchDisplayPicked(t *testing.T) {
+	external := mygo.Display{ID: 3, Label: "DELL U2723QE", Bounds: mygo.Rectangle{Width: 2560, Height: 1440}, Primary: true}
+	builtIn := mygo.Display{ID: 1, Label: "Built-in Retina Display", Bounds: mygo.Rectangle{X: 2560, Y: 400, Width: 1470, Height: 956}, Internal: true}
+	ds := []mygo.Display{external, builtIn}
+	defer func(f func() []mygo.Display) { displays = f }(displays)
+	displays = func() []mygo.Display { return ds }
+
+	a := newTestApp()
+	a.settings.Notch = true
+	n := &notch{a: a, winW: notchOpenW + 60, winH: 240}
+	a.notch = n
+	n.locate()
+	if n.display.ID != external.ID {
+		t.Fatalf("on display %d before any was picked, want the main one", n.display.ID)
+	}
+
+	a.settingsPage = "notch"
+	tt := ui.NewTester(a.settingsView, 760, 900)
+	tt.Frame()
+	// The select, which shows what's picked.
+	if err := tt.Click("Main Display"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click(builtIn.Label); err != nil {
+		t.Fatal(err)
+	}
+	on := func(d mygo.Display) bool {
+		return n.display.ID == d.ID && n.screenX == float32(d.Bounds.X)+(float32(d.Bounds.Width)-n.winW)/2 && n.screenY == float32(d.Bounds.Y)
+	}
+	if !on(builtIn) {
+		t.Fatalf("at %v,%v on display %d, want the top of the built-in one", n.screenX, n.screenY, n.display.ID)
+	}
+
+	ds = []mygo.Display{external}
+	n.locate()
+	if !on(external) {
+		t.Fatalf("on display %d with the built-in one unplugged, want the main one", n.display.ID)
+	}
+	builtIn.ID = 5
+	ds = []mygo.Display{external, builtIn}
+	n.locate()
+	if !on(builtIn) {
+		t.Fatalf("on display %d with the built-in one plugged in again", n.display.ID)
+	}
+	if a.settings.NotchDisplay != builtIn.Label {
+		t.Errorf("forgot the pick: %q", a.settings.NotchDisplay)
+	}
+}
