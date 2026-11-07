@@ -586,3 +586,12 @@ func TestListed(t *testing.T) {
 		t.Errorf("listed %d: %v … %v", len(listed), listed[:2], listed[len(listed)-1])
 	}
 }
+
+// A plugin is MyGo Music's own by who owns its repository, whatever the case.
+func TestOfficial(t *testing.T) {
+	for repo, want := range map[string]bool{"egoist/mygo-music-youtube-music": true, "Egoist/x": true, "egoist2/x": false, "someone/egoist": false} {
+		if Official(repo) != want {
+			t.Errorf("Official(%q) = %v", repo, !want)
+		}
+	}
+}
