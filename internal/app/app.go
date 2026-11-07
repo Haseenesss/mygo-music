@@ -111,6 +111,7 @@ type app struct {
 	settingText map[string]*string // the settings of sources, as being typed
 
 	trackList ui.ListState
+	homeOpen  map[string]bool // the sections of Home, by title, showing all their cards
 	// Where the page and the sidebar are scrolled, kept while Now Playing
 	// covers them, unbuilt.
 	pageScroll ui.ScrollState

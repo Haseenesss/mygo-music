@@ -401,4 +401,6 @@ var zhCN = map[string]string{
 	"Done":          "完成",
 	"Not signed in": "未登录",
 	"Turn it on to sign in to it and change its settings": "打开后才能登录和更改它的设置",
+
+	"Show Less": "收起",
 }
