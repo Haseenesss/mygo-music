@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -34,6 +35,9 @@ type signInDialog struct {
 	err     string
 	prompt  music.SignInPrompt // what the source wants shown
 	qr      *qr.Code           // prompt's QR, encoded
+	link    string             // prompt's URL, shown to select or copy
+	answer  string             // what the listener fills in the field it asks for
+	copied  time.Time          // when the link was copied, by the view's clock
 
 	// asked is when the dialog first showed this sign-in on its way, by the
 	// view's clock, and last is the error of the one before. Until it has
@@ -117,6 +121,7 @@ func (a *app) startSignIn() {
 	}
 	d.waiting, d.err, d.last = true, "", d.err
 	d.prompt, d.qr = music.SignInPrompt{}, nil
+	d.link, d.answer, d.copied = "", "", time.Time{}
 	d.asked = time.Time{}
 	gen := d.gen
 	over := a.win
@@ -167,7 +172,7 @@ func (a *app) startSignIn() {
 // leaves its text, which should say how else to go on.
 func (a *app) signInPrompted(prompt music.SignInPrompt) {
 	d := &a.signIn
-	d.prompt, d.qr = prompt, nil
+	d.prompt, d.qr, d.link = prompt, nil, prompt.URL
 	if prompt.QR != "" {
 		code, err := qr.Encode(prompt.QR, qr.M)
 		if err != nil {
@@ -202,7 +207,11 @@ func (a *app) signInDialog(c *ui.Context, p palette, settings bool) {
 		// What it holds changes its height, and it follows at once: a spring
 		// moved it, and its text with it, by fractions of a pixel for as long
 		// as half a second after a sign-in failed.
-		panel.Width(360).Padding(24).Radius(18).Gap(10).
+		width := float32(360)
+		if d.waiting && (d.prompt.URL != "" || d.prompt.Input != "") {
+			width = 480
+		}
+		panel.Width(width).Padding(24).Radius(18).Gap(10).
 			Background(p.bg).Border(1, p.hairline).Shadow(0, 24, 60, -12, ui.RGBA(0, 0, 0, 0.4)).
 			Transition(ui.ElementTransition{Animation: &ui.Snappy, Colors: true, Enter: &ui.Motion{Scale: 0.94}, Exit: &ui.Motion{Scale: 0.96}})
 		name := ""
@@ -234,6 +243,12 @@ func (a *app) signInDialog(c *ui.Context, p palette, settings bool) {
 			text = d.last
 		}
 		ui.Text(c, text).FontSize(13).TextColor(p.muted).LineHeight(1.45)
+		if waiting && d.err == "" && d.prompt.URL != "" {
+			a.signInLink(c, p, d)
+		}
+		if waiting && d.err == "" && d.prompt.Input != "" {
+			a.signInAnswer(c, p, d)
+		}
 		if code := d.qr; code != nil && waiting && d.err == "" {
 			// On white whatever the appearance, for cameras to read it.
 			ui.Row(c).Justify(ui.Center).Margin(6, 0, 2, 0).Children(func() {
@@ -254,6 +269,58 @@ func (a *app) signInDialog(c *ui.Context, p palette, settings bool) {
 				a.startSignIn()
 			}
 		})
+	})
+}
+
+// signInLink shows the page the source signs in on, whole, to copy, as to
+// another browser than the one it opened in, or to open again.
+func (a *app) signInLink(c *ui.Context, p palette, d *signInDialog) {
+	ui.Row(c.Key("sign-in-link")).Gap(4).AlignItems(ui.Center).Margin(4, 0, 0, 0).
+		Padding(2, 4, 2, 10).Radius(10).Background(p.hover).Border(1, p.hairline).Children(func() {
+		// Its start, which says where it goes, and the rest to select or copy.
+		ui.Text(c.Key("url"), d.link).Label(T("Sign-in Link")).Selectable().MaxLines(1).
+			FontSize(12).TextColor(p.text).Grow(1).Shrink(1).MinWidth(0).Padding(8, 0, 8, 0)
+		icon, label := iconCopy, T("Copy Link")
+		if !d.copied.IsZero() {
+			if left := 1500*time.Millisecond - c.Now().Sub(d.copied); left > 0 {
+				icon, label = iconCheck, T("Copied")
+				c.After(left)
+			} else {
+				d.copied = time.Time{}
+			}
+		}
+		if iconButton(c.Key("copy"), icon, 14, p.muted, label).Tooltip(label).Clicked() {
+			if copyText(d.prompt.URL) == nil {
+				d.copied = c.Now()
+			}
+		}
+	})
+	ui.Row(c.Key("sign-in-again")).Gap(14).Children(func() {
+		ui.Link(c, T("Open Again"), d.prompt.URL).FontSize(12.5).TextColor(p.accent)
+	})
+}
+
+// signInAnswer is the field the source asks the listener to fill in, with
+// what they bring back from the browser, which it's handed as they submit.
+func (a *app) signInAnswer(c *ui.Context, p palette, d *signInDialog) {
+	ui.Row(c.Key("sign-in-answer")).Gap(8).AlignItems(ui.Center).Margin(4, 0, 0, 0).Children(func() {
+		in := ui.TextInput(c.Key("answer"), &d.answer).Placeholder(d.prompt.Input).Label(d.prompt.Input).
+			FontSize(13).Grow(1).Shrink(1).MinWidth(0)
+		label := d.prompt.Submit
+		if label == "" {
+			label = T("Sign In")
+		}
+		send := pillButton(c.Key("submit"), nil, label, p.accent, p.onAccent)
+		text := strings.TrimSpace(d.answer)
+		if text == "" {
+			send.Disabled(true).Opacity(0.5)
+		}
+		if (send.Clicked() || in.Submitted()) && text != "" {
+			if src, ok := d.lib.src.(music.Answerer); ok {
+				d.answer = ""
+				go src.SignInInput(text)
+			}
+		}
 	})
 }
 

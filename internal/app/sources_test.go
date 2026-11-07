@@ -1018,6 +1018,70 @@ func TestSignInShowsPrompt(t *testing.T) {
 	}
 }
 
+// A prompt with a link shows it whole, to copy, and a field it asks for hands
+// what's filled in to the source.
+func TestSignInShowsLinkAndField(t *testing.T) {
+	var copied string
+	was := copyText
+	copyText = func(text string) error { copied = text; return nil }
+	defer func() { copyText = was }()
+	answers := make(chan string, 1)
+	release := make(chan struct{})
+	a := newTestApp()
+	ch := posts(a)
+	src := &answeringSource{promptingSource: &promptingSource{fakeSource: newFakeSource("link")}, answers: answers}
+	src.signIn = func() (*music.Account, error) {
+		src.show(music.SignInPrompt{Text: "Sign in in your browser", URL: "https://example.com/auth?x=1", Input: "Callback URL", Submit: "Finish"})
+		<-release
+		return &music.Account{ID: "1", Name: "Me"}, nil
+	}
+	lib := addFake(a, src)
+	a.homeLoading = true
+	a.promptSignIn(lib)
+	tt := ui.NewTester(a.view, 1200, 800)
+	settled(tt)
+	if err := tt.Click("Sign In"); err != nil {
+		t.Fatal(err)
+	}
+	runPost(t, ch)
+	settled(tt)
+	if a.signIn.link != "https://example.com/auth?x=1" {
+		t.Fatalf("link: %q", a.signIn.link)
+	}
+	if err := tt.Click(T("Copy Link")); err != nil {
+		t.Fatal(err)
+	}
+	if copied != "https://example.com/auth?x=1" {
+		t.Errorf("copied %q", copied)
+	}
+	if _, ok := tt.Find(T("Open Again")); !ok {
+		t.Errorf("no Open Again: %q", tt.Texts())
+	}
+	a.signIn.answer = "http://localhost/cb?code=1"
+	settled(tt)
+	if err := tt.Click("Finish"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-answers:
+		if got != "http://localhost/cb?code=1" {
+			t.Errorf("answer %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the source got no answer")
+	}
+	close(release)
+	until(t, ch, func() bool { return lib.account != nil })
+}
+
+// answeringSource is a prompting source that takes what's filled in.
+type answeringSource struct {
+	*promptingSource
+	answers chan string
+}
+
+func (s *answeringSource) SignInInput(text string) { s.answers <- text }
+
 // promptingSource is a fake source with something to show while signing in.
 type promptingSource struct {
 	*fakeSource

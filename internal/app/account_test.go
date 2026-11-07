@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"image"
 	"image/draw"
 	"os"
@@ -117,5 +118,49 @@ func TestAccountMenuFrames(t *testing.T) {
 			name = "account-dark.png"
 		}
 		saveFrame(t, dir, name, out)
+	}
+}
+
+// TestSignInLinkFrames saves the sign-in dialog with a link to copy and a
+// field to fill in, light and dark, to MM_FRAMES.
+func TestSignInLinkFrames(t *testing.T) {
+	dir := os.Getenv("MM_FRAMES")
+	if dir == "" {
+		t.Skip()
+	}
+	for _, dark := range []bool{false, true} {
+		a := newTestApp()
+		ch := posts(a)
+		release := make(chan struct{})
+		src := &answeringSource{promptingSource: &promptingSource{fakeSource: newFakeSource("YouTube Music")}, answers: make(chan string, 1)}
+		src.signIn = func() (*music.Account, error) {
+			src.show(music.SignInPrompt{
+				Text:   "请在 Chrome 中打开的页面登录 YouTube Music，登录后这里会自动继续。\n也可以在浏览器开发者工具的“网络”中，复制任一发往 music.youtube.com 的请求的 Cookie，粘贴到这里。",
+				URL:    "https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin",
+				Input:  "music.youtube.com 的 Cookie",
+				Submit: "完成登录",
+			})
+			<-release
+			return nil, errors.New("closed")
+		}
+		lib := addFake(a, src)
+		a.homeLoading = true
+		a.promptSignIn(lib)
+		tt := ui.NewTester(a.view, 1000, 640)
+		tt.SetDark(dark)
+		settled(tt)
+		if err := tt.Click("Sign In"); err != nil {
+			t.Fatal(err)
+		}
+		runPost(t, ch)
+		settled(tt)
+		tt.Advance(time.Second)
+		tt.Frame()
+		name := "signin-link-light.png"
+		if dark {
+			name = "signin-link-dark.png"
+		}
+		saveFrame(t, dir, name, tt.Image())
+		close(release)
 	}
 }

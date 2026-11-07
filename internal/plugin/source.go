@@ -30,7 +30,9 @@ func (p *Plugin) stampBrowse(b *music.Browse) {
 
 func (p *Plugin) SignIn() (*music.Account, error) {
 	var a music.Account
-	if err := p.callWithin(signInTimeout, "signIn", nil, &a); err != nil {
+	// attempt is for host.signInInput, to say which sign-in it's of.
+	params := map[string]int{"attempt": p.startSignIn()}
+	if err := p.callWithin(signInTimeout, "signIn", params, &a); err != nil {
 		return nil, err
 	}
 	return &a, nil
