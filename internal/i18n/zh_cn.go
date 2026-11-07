@@ -398,4 +398,9 @@ var zhCN = map[string]string{
 	"No songs":          "没有歌曲",
 
 	"Show Less": "收起",
+
+	"Previous Button":    "上一首按钮",
+	"Previous Song":      "播放上一首",
+	"Start of This Song": "回到这首开头",
+	"Going back to the start of the song plays the one before in its first 3 seconds": "选择回到开头时，在一首歌的前 3 秒内按下仍会播放上一首",
 }
