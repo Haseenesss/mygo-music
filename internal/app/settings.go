@@ -72,6 +72,10 @@ type settings struct {
 	// Normalize evens out the loudness of tracks, by what their source
 	// measured of each.
 	Normalize bool `json:"normalize"`
+	// PrevRestarts makes Previous go back to the start of the song playing,
+	// but in its first seconds: the listener chooses it over playing the one
+	// before.
+	PrevRestarts bool `json:"prevRestarts,omitempty"`
 	// HotComments shows a song's top comments in its quiet parts, in place of
 	// the lyrics (quietComment), for a source with comments: the listener
 	// turns it on.

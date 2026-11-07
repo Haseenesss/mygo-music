@@ -40,6 +40,9 @@ type Player struct {
 	// Normalize reports whether to even out the loudness of tracks, as
 	// the settings say.
 	Normalize func() bool
+	// PrevRestarts reports whether Prev goes back to the start of the track
+	// playing once it's a few seconds in, as the settings say.
+	PrevRestarts func() bool
 	// Cache keeps the songs played, if set.
 	Cache *Cache
 	// Changed, if set, hears that what plays, where it is or whether it
@@ -416,9 +419,14 @@ func (p *Player) Next() {
 
 // Prev plays the track before this one, however far this one has played:
 // once a few seconds in, going back to its start only kept the listener
-// pressing twice.
+// pressing twice. Unless PrevRestarts says to go back to its start then, for
+// a listener who'd rather.
 func (p *Player) Prev() {
 	if len(p.order) == 0 {
+		return
+	}
+	if p.PrevRestarts != nil && p.PrevRestarts() && p.at >= 0 && p.Position() >= restartWithin {
+		p.Seek(0)
 		return
 	}
 	at := p.at - 1
@@ -428,6 +436,10 @@ func (p *Player) Prev() {
 	// One that can't play is passed going back, as going forward.
 	p.loadSkipping(at, 0, back, true, 0)
 }
+
+// restartWithin is how far into a track Prev goes back to its start, when it
+// does: before, it plays the one before, as pressed again at the start.
+const restartWithin = 3 * time.Second
 
 // Jump plays the queue's track i, the listener's pick: one that can't play
 // stays, saying why.

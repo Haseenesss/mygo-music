@@ -266,6 +266,27 @@ func settle(t *testing.T, ch chan func(), p *Player) {
 	}
 }
 
+// With PrevRestarts, Previous goes back to the start of the song a few seconds
+// in, and before then plays the one before, passing one that can't play.
+func TestPrevRestarts(t *testing.T) {
+	p, ch, q := pickyQueue()
+	defer p.stop()
+	p.PrevRestarts = func() bool { return true }
+	p.PlayTrack(q, 2)
+	settle(t, ch, p)
+	p.Seek(10 * time.Second)
+	p.Prev()
+	settle(t, ch, p)
+	if p.Current().ID != "c" || p.Position() >= restartWithin {
+		t.Fatalf("previous went to %s at %v", p.Current().ID, p.Position())
+	}
+	p.Prev()
+	settle(t, ch, p)
+	if p.Current().ID != "a" || !p.Playing() {
+		t.Errorf("previous at the start went to %s, playing %v", p.Current().ID, p.Playing())
+	}
+}
+
 // A song the listener picks that can't play stays, saying why. Clicking one
 // the source refused for a moment used to play the one after it instead.
 func TestPickedTrackStays(t *testing.T) {
