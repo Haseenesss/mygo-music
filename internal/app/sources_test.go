@@ -628,6 +628,11 @@ func TestSetupSaysWhatThePluginSaid(t *testing.T) {
 	if _, ok := settings.Find("Fill these in for it to work"); ok {
 		t.Error("the settings ask to fill in fields the plugin hasn't")
 	}
+	// Its card has what to allow, and says what it said too.
+	if err := settings.Click("guarded Details"); err != nil {
+		t.Fatal(err)
+	}
+	settings.Frame()
 	if err := settings.Click("Allow Programs"); err != nil {
 		t.Fatal(err)
 	}
