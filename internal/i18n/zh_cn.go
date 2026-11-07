@@ -395,4 +395,10 @@ var zhCN = map[string]string{
 	"Singles & EPs":     "单曲和 EP",
 	"Show All %d Songs": "显示全部 %d 首歌曲",
 	"No songs":          "没有歌曲",
+
+	"%s Details":    "%s 详情",
+	"Remove %s":     "移除 %s",
+	"Done":          "完成",
+	"Not signed in": "未登录",
+	"Turn it on to sign in to it and change its settings": "打开后才能登录和更改它的设置",
 }

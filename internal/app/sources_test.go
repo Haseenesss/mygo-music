@@ -575,6 +575,10 @@ func TestErrSetupOffersSettings(t *testing.T) {
 	a.settingsPage = "plugins"
 	settings := ui.NewTester(a.settingsView, 760, 1400)
 	settings.Frame()
+	if err := settings.Click("fake Details"); err != nil {
+		t.Fatal(err)
+	}
+	settled(settings)
 	// The field, under the title labelled as it is.
 	r, ok := settings.Find("API Key")
 	if !ok {
@@ -695,6 +699,10 @@ func TestSignInFromSettingsAsksThere(t *testing.T) {
 	settings := ui.NewTester(a.settingsView, 780, 1000)
 	main.Frame()
 	settings.Frame()
+	if err := settings.Click("fake Details"); err != nil {
+		t.Fatal(err)
+	}
+	settled(settings)
 	if err := settings.Click("Sign In"); err != nil {
 		t.Fatal(err)
 	}
@@ -721,6 +729,10 @@ func TestSettingsAskAnUnusedSourceItsAccount(t *testing.T) {
 	settings := ui.NewTester(a.settingsView, 780, 1000)
 	settings.Frame()
 	until(t, ch, func() bool { return lib.account != nil })
+	settled(settings)
+	if err := settings.Click("other Details"); err != nil {
+		t.Fatal(err)
+	}
 	settled(settings)
 	if _, ok := settings.Find("Sign Out"); !ok {
 		t.Errorf("doesn't offer to sign out: %q", settings.Texts())
@@ -983,13 +995,14 @@ func TestSettingsAllowPrograms(t *testing.T) {
 	a.settingsPage = "plugins"
 	settings := ui.NewTester(a.settingsView, 760, 1400)
 	settings.Frame()
+	if err := settings.Click("guarded Details"); err != nil {
+		t.Fatal(err)
+	}
+	settled(settings)
 	if err := settings.Click("Allow Programs"); err != nil {
 		t.Fatal(err)
 	}
-	runPost(t, ch)
-	if !src.Granted() {
-		t.Fatal("not allowed after allowing")
-	}
+	until(t, ch, src.Granted)
 	settings.Frame()
 	if err := settings.Click("Stop Allowing"); err != nil {
 		t.Fatal(err)
@@ -1468,11 +1481,14 @@ func TestRemovePluginFromSettings(t *testing.T) {
 
 	remove := func() {
 		t.Helper()
-		if err := tt.Click("More for Disk"); err != nil {
-			t.Fatal(err)
+		if !a.pluginCardOpen {
+			if err := tt.Click("Disk Details"); err != nil {
+				t.Fatal(err)
+			}
+			settled(tt)
 		}
-		if err := tt.ChooseMenuItem("Remove…"); err != nil {
-			t.Fatalf("%v; the menu shows %q", err, tt.Menu())
+		if err := tt.Click("Remove Disk"); err != nil {
+			t.Fatalf("%v: %q", err, tt.Texts())
 		}
 		tt.Frame()
 	}
@@ -1540,11 +1556,14 @@ func TestCheckPluginUpdateNow(t *testing.T) {
 
 	check := func() {
 		t.Helper()
-		if err := tt.Click("More for GH"); err != nil {
-			t.Fatal(err)
+		if !a.pluginCardOpen {
+			if err := tt.Click("GH Details"); err != nil {
+				t.Fatal(err)
+			}
+			settled(tt)
 		}
-		if err := tt.ChooseMenuItem("Check for Updates"); err != nil {
-			t.Fatalf("%v; the menu shows %q", err, tt.Menu())
+		if err := tt.Click("Check for Updates"); err != nil {
+			t.Fatalf("%v: %q", err, tt.Texts())
 		}
 		runPost(t, ch)
 		tt.Frame()
@@ -1587,14 +1606,20 @@ func TestUpdatePluginReusesCheck(t *testing.T) {
 	a.settingsPage = "plugins"
 	tt := ui.NewTester(a.settingsView, 780, 1000)
 	tt.Frame()
-	if err := tt.Click("More for GH"); err != nil {
+	if err := tt.Click("GH Details"); err != nil {
 		t.Fatal(err)
 	}
-	if err := tt.ChooseMenuItem("Check for Updates"); err != nil {
-		t.Fatalf("%v; the menu shows %q", err, tt.Menu())
+	settled(tt)
+	if err := tt.Click("Check for Updates"); err != nil {
+		t.Fatalf("%v: %q", err, tt.Texts())
 	}
 	runPost(t, ch)
 	tt.Frame()
+	// Its row's Update, the card put away.
+	if err := tt.Click("Done"); err != nil {
+		t.Fatal(err)
+	}
+	settled(tt)
 
 	update := func() string {
 		t.Helper()
