@@ -405,4 +405,10 @@ var zhCN = map[string]string{
 	"Going back to the start of the song plays the one before in its first 3 seconds": "选择回到开头时，在一首歌的前 3 秒内按下仍会播放上一首",
 
 	"Playback Speed": "播放速度",
+
+	"Official Plugins":                 "官方插件",
+	"Community Plugins":                "社区插件",
+	"Official":                         "官方",
+	"Made by the author of MyGo Music": "MyGo Music 作者制作",
+	"Made by others, and not reviewed. See what each asks for before you install it.": "由其他开发者制作，未经审核。安装前请先看清它需要哪些权限。",
 }

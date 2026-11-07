@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -545,30 +546,47 @@ func TestRemove(t *testing.T) {
 	}
 }
 
-// The store's list skips archived repositories and those a later page lists
-// again, and stops at the last page.
+// The store's list puts MyGo Music's own first: its author's repositories
+// named for it, a fork too, if they have the topic or a plugin.json. Then
+// those with the topic, but archived ones and those listed already, to the
+// last page.
 func TestListed(t *testing.T) {
 	var pages []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		pages = append(pages, r.URL.Query().Get("page"))
-		if q := r.URL.Query().Get("q"); !strings.Contains(q, "topic:"+Topic) {
-			t.Errorf("searched for %q", q)
-		}
 		type item struct {
-			Name     string `json:"full_name"`
-			Stars    int    `json:"stargazers_count"`
-			Archived bool   `json:"archived"`
+			Name     string   `json:"full_name"`
+			Stars    int      `json:"stargazers_count"`
+			Archived bool     `json:"archived"`
+			Topics   []string `json:"topics"`
 		}
 		var items []item
-		if r.URL.Query().Get("page") == "1" {
-			for i := range 100 {
-				items = append(items, item{Name: fmt.Sprintf("o/p%d", i), Stars: 100 - i})
+		total := 0
+		q := r.URL.Query().Get("q")
+		switch {
+		case r.URL.Path == "/repos/egoist/mygo-music-fork/contents/plugin.json":
+			w.Write([]byte(`{"name":"plugin.json"}`))
+			return
+		case strings.HasPrefix(r.URL.Path, "/repos/"):
+			http.NotFound(w, r)
+			return
+		case strings.Contains(q, "user:egoist"):
+			items = []item{{Name: "egoist/mygo-music"}, {Name: "egoist/mygo-music-topic", Topics: []string{Topic}}, {Name: "egoist/mygo-music-fork"}, {Name: "egoist/mygo-music-app"}}
+		case strings.Contains(q, "topic:"+Topic):
+			pages = append(pages, r.URL.Query().Get("page"))
+			total = 102
+			if r.URL.Query().Get("page") == "1" {
+				for i := range 100 {
+					items = append(items, item{Name: fmt.Sprintf("o/p%d", i), Stars: 100 - i})
+				}
+				items[1].Archived = true
+				items[2].Name = "egoist/mygo-music-topic"
+			} else {
+				items = []item{{Name: "O/P0"}, {Name: "o/last"}}
 			}
-			items[1].Archived = true
-		} else {
-			items = []item{{Name: "O/P0"}, {Name: "o/last"}}
+		default:
+			t.Errorf("searched for %q", q)
 		}
-		json.NewEncoder(w).Encode(map[string]any{"total_count": 102, "items": items})
+		json.NewEncoder(w).Encode(map[string]any{"total_count": total, "items": items})
 	}))
 	defer srv.Close()
 	was, wasToken := githubAPI, githubToken
@@ -582,7 +600,26 @@ func TestListed(t *testing.T) {
 	if len(pages) != 2 {
 		t.Errorf("asked for pages %q", pages)
 	}
-	if len(listed) != 100 || listed[0].Repo != "o/p0" || listed[1].Repo != "o/p2" || listed[99].Repo != "o/last" {
-		t.Errorf("listed %d: %v … %v", len(listed), listed[:2], listed[len(listed)-1])
+	var repos []string
+	for _, l := range listed {
+		if l.Official {
+			repos = append(repos, l.Repo)
+		}
+	}
+	if !slices.Equal(repos, []string{"egoist/mygo-music-topic", "egoist/mygo-music-fork"}) || listed[0].Repo != repos[0] || listed[1].Repo != repos[1] {
+		t.Errorf("its own: %q, listed first %v", repos, listed[:2])
+	}
+	// 2 of its own; of the first page's 100, one archived and one its own.
+	if len(listed) != 2+98+1 || listed[2].Repo != "o/p0" || listed[3].Repo != "o/p3" || listed[len(listed)-1].Repo != "o/last" {
+		t.Errorf("listed %d: %v … %v", len(listed), listed[2:4], listed[len(listed)-1])
+	}
+}
+
+// A plugin is MyGo Music's own by who owns its repository, whatever the case.
+func TestOfficial(t *testing.T) {
+	for repo, want := range map[string]bool{"egoist/mygo-music-youtube-music": true, "Egoist/x": true, "egoist2/x": false, "someone/egoist": false} {
+		if Official(repo) != want {
+			t.Errorf("Official(%q) = %v", repo, !want)
+		}
 	}
 }

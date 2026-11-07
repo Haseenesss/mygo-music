@@ -1,8 +1,12 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -95,5 +99,72 @@ func TestStoreRefreshesAfterFailing(t *testing.T) {
 	}
 	if err := tt.Click("Install owner/new"); err != nil {
 		t.Error(err)
+	}
+}
+
+// What GitHub listed is kept between launches, for the store not to ask it
+// again while it's fresh, as its search allows few requests without a token;
+// Refresh asks at once, and a list kept too long is asked for anew.
+func TestStoreKeepsWhatGitHubListed(t *testing.T) {
+	asked := 0
+	wasList := listPlugins
+	defer func() { listPlugins = wasList }()
+	listPlugins = func() ([]plugin.Listing, error) {
+		asked++
+		return []plugin.Listing{{Repo: "owner/new"}}, nil
+	}
+	file := filepath.Join(t.TempDir(), "plugin-store.json")
+	launch := func() (*app, chan func(), *ui.Tester) {
+		t.Helper()
+		a := newTestApp()
+		ch := posts(a)
+		a.store.file = file
+		a.settingsPage = "plugins"
+		tt := ui.NewTester(a.settingsView, 780, 1000)
+		tt.Frame()
+		if err := tt.Click("Discover"); err != nil {
+			t.Fatal(err)
+		}
+		tt.Frame()
+		return a, ch, tt
+	}
+
+	_, ch, _ := launch()
+	runPost(t, ch)
+	if asked != 1 {
+		t.Fatalf("asked GitHub %d times", asked)
+	}
+
+	_, ch, tt := launch()
+	tt.Frame()
+	if asked != 1 {
+		t.Fatal("asked GitHub again though what it listed is fresh")
+	}
+	if _, ok := tt.Find("Install owner/new"); !ok {
+		t.Fatal("the list kept doesn't show")
+	}
+	if err := tt.Click("Refresh"); err != nil {
+		t.Fatal(err)
+	}
+	runPost(t, ch)
+	if asked != 2 {
+		t.Fatalf("Refresh asked GitHub %d times in all", asked)
+	}
+
+	data, _ := json.Marshal(storeFile{Version: storeVersion, At: time.Now().Add(-storeFresh - time.Minute), Listed: []plugin.Listing{{Repo: "owner/old"}}})
+	os.WriteFile(file, data, 0o644)
+	_, ch, _ = launch()
+	runPost(t, ch)
+	if asked != 3 {
+		t.Errorf("didn't ask again for a list kept %v", storeFresh)
+	}
+
+	// One kept fresh by a version that kept it otherwise.
+	data, _ = json.Marshal(storeFile{At: time.Now(), Listed: []plugin.Listing{{Repo: "owner/old"}}})
+	os.WriteFile(file, data, 0o644)
+	_, ch, _ = launch()
+	runPost(t, ch)
+	if asked != 4 {
+		t.Errorf("took a list kept by another version")
 	}
 }
