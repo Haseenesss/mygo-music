@@ -137,15 +137,26 @@ const (
 	rowEmpty
 )
 
+// homeCards is how many cards a section of Home shows until the listener asks
+// for all of it.
+const homeCards = 8
+
 // cardCount is how many cards a section has, of whatever kinds: they fill its
 // rows one after another, so a few of one kind don't take a row of their own.
 func cardCount(sec *music.Section) int {
 	return len(sec.Albums) + len(sec.Artists) + len(sec.Playlists) + len(sec.Shows) + len(sec.Stations) + len(sec.Links)
 }
 
+// homeCapped reports whether a section of Home has more cards than it shows
+// until the listener asks, with no page of its own to show them on.
+func homeCapped(sec *music.Section, pageID string) bool {
+	return pageID == "" && sec.MorePage == "" && cardCount(sec) > homeCards
+}
+
 // browseLayout lays out page in rows. The first section of Home, if tracks, is
-// the card that leads it.
-func browseLayout(page *music.Browse, pageID string, cols int) []browseRow {
+// the card that leads it. A section of Home shows homeCards of its cards, but
+// those open says to show all of.
+func browseLayout(page *music.Browse, pageID string, cols int, open func(sec *music.Section) bool) []browseRow {
 	var rows []browseRow
 	for s := range page.Sections {
 		sec := &page.Sections[s]
@@ -154,13 +165,16 @@ func browseLayout(page *music.Browse, pageID string, cols int) []browseRow {
 			if cardCount(sec) == 0 {
 				continue
 			}
-		} else if sec.Title != "" || sec.MorePage != "" {
+		} else if sec.Title != "" || sec.MorePage != "" || homeCapped(sec, pageID) {
 			rows = append(rows, browseRow{rowTitle, s, 0, 0})
 		}
 		// A section of songs with a few cards among them, as a mix in Listen
 		// Again, has the cards under its title: after all its songs, they sat
 		// apart from it, over the next section's title.
 		n := cardCount(sec)
+		if homeCapped(sec, pageID) && !open(sec) {
+			n = homeCards
+		}
 		for from := 0; from < n; from += cols {
 			rows = append(rows, browseRow{rowCards, s, from, min(from+cols, n)})
 		}
@@ -179,7 +193,7 @@ func browseLayout(page *music.Browse, pageID string, cols int) []browseRow {
 // browseRows shows a page under a header, which scrolls with it.
 func (a *app) browseRows(c *ui.Context, page *music.Browse, pageID string, header func(c *ui.Context)) {
 	cols := a.columns(c, 156)
-	layout := browseLayout(page, pageID, cols)
+	layout := browseLayout(page, pageID, cols, func(sec *music.Section) bool { return a.homeOpen[sec.Title] })
 	top, bottom := a.insets(c)
 	a.underTop, a.underBottom = true, true
 	rows := len(layout) + 1
@@ -207,7 +221,7 @@ func (a *app) browseRows(c *ui.Context, page *music.Browse, pageID string, heade
 			}
 			ui.Box(c).Padding(0, 12, below, 12).Children(func() { a.featureCard(c, sec, pageID, r.section, now) })
 		case rowTitle:
-			a.browseTitle(c, sec, r.section == 0)
+			a.browseTitle(c, sec, r.section == 0, homeCapped(sec, pageID))
 		case rowTrack:
 			a.trackRow(c, sec.Tracks, r.from, true, "")
 		case rowEmpty:
@@ -218,24 +232,39 @@ func (a *app) browseRows(c *ui.Context, page *music.Browse, pageID string, heade
 	}).Grow(1).Padding(top+pageGap, pagePad-12, bottom+32, pagePad-12).ScrollbarInsets(top, 0, bottom, 0)
 }
 
-// browseTitle is a section's title, with a way to all of it if there's more.
-func (a *app) browseTitle(c *ui.Context, sec *music.Section, first bool) {
+// browseTitle is a section's title, with a way to all of it if there's more:
+// its page, or for a section of Home with more cards than it shows, the rest
+// of them in place.
+func (a *app) browseTitle(c *ui.Context, sec *music.Section, first, capped bool) {
 	margin := float32(34)
 	if first {
 		margin = 0
 	}
 	ui.Row(c).Margin(margin, 12, 14, 12).AlignItems(ui.Baseline).Children(func() {
 		ui.Text(c, sec.Title).FontSize(19).FontWeight(700).LetterSpacing(-0.3).Grow(1).Shrink(1).MinWidth(0)
-		if sec.MorePage != "" {
-			more := ui.ButtonBase(c.Key("more")).Padding(2, 8).Radius(6).FocusRing(false).Label(T("See All"))
-			if more.Hovered() {
-				more.Background(a.pal.hover)
-			}
-			more.Children(func() { ui.Text(c, T("See All")).FontSize(13).TextColor(a.pal.muted) })
-			if more.Clicked() {
-				a.open(route{page: pageBrowse, id: sec.MorePage})
-			}
+		label := T("See All")
+		if capped && a.homeOpen[sec.Title] {
+			label = T("Show Less")
 		}
+		if sec.MorePage == "" && !capped {
+			return
+		}
+		more := ui.ButtonBase(c.Key("more")).Padding(2, 8).Radius(6).FocusRing(false).Label(label)
+		if more.Hovered() {
+			more.Background(a.pal.hover)
+		}
+		more.Children(func() { ui.Text(c, label).FontSize(13).TextColor(a.pal.muted) })
+		if !more.Clicked() {
+			return
+		}
+		if sec.MorePage != "" {
+			a.open(route{page: pageBrowse, id: sec.MorePage})
+			return
+		}
+		if a.homeOpen == nil {
+			a.homeOpen = map[string]bool{}
+		}
+		a.homeOpen[sec.Title] = !a.homeOpen[sec.Title]
 	})
 }
 

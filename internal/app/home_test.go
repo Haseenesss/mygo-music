@@ -422,3 +422,36 @@ func TestSectionCardsBeforeSongs(t *testing.T) {
 		t.Errorf("title at %v, mix at %v, first song at %v", title, mix, first)
 	}
 }
+
+// A section of Home shows 8 cards until See All shows the rest in place, and
+// Show Less puts them away; one with a page of its own opens it instead.
+func TestHomeSectionShowsEight(t *testing.T) {
+	a := newTestApp()
+	var lists []music.Playlist
+	for i := range 10 {
+		lists = append(lists, music.Playlist{ID: fmt.Sprint(i), Name: fmt.Sprint("歌单", i)})
+	}
+	a.home = &music.Browse{Sections: []music.Section{{Title: "Mixes", Playlists: lists}}}
+	tt := ui.NewTester(a.view, 1600, 1200)
+	tt.Frame()
+	if _, ok := tt.Find("歌单7"); !ok {
+		t.Fatal("the 8th card doesn't show")
+	}
+	if _, ok := tt.Find("歌单8"); ok {
+		t.Fatal("more than 8 cards show")
+	}
+	if err := tt.Click("See All"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if _, ok := tt.Find("歌单9"); !ok {
+		t.Fatal("See All didn't show the rest")
+	}
+	if err := tt.Click("Show Less"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if _, ok := tt.Find("歌单8"); ok {
+		t.Error("Show Less didn't put the rest away")
+	}
+}
