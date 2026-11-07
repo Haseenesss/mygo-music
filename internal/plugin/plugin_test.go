@@ -113,7 +113,8 @@ function fail(code, message) { const e = new Error(message); e.code = code; retu
 export function stream() { throw fail("unavailable", "not in your country"); }
 export async function account() { throw fail("signIn"); }
 export function album() { throw new Error("boom"); }
-export function artist() { throw "just text"; }`)
+export function artist() { throw "just text"; }
+export function lyrics() { throw fail("setup", "Install ffmpeg"); }`)
 	if _, err := p.Stream("1", ""); !errors.Is(err, music.ErrUnavailable) || !strings.Contains(err.Error(), "not in your country") {
 		t.Errorf("stream: %v", err)
 	}
@@ -125,6 +126,9 @@ export function artist() { throw "just text"; }`)
 	}
 	if _, err := p.Artist("1"); err == nil || err.Error() != "just text" {
 		t.Errorf("artist: %v", err)
+	}
+	if _, err := p.Lyrics("1"); !errors.Is(err, music.ErrSetup) || music.Words(err) != "Install ffmpeg" {
+		t.Errorf("lyrics: %v, said %q", err, music.Words(err))
 	}
 }
 

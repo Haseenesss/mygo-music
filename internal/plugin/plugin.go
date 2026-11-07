@@ -585,7 +585,7 @@ func asError(code, message string) error {
 	if message == "" {
 		return known
 	}
-	return fmt.Errorf("%w: %s", known, message)
+	return &music.Said{Err: known, Message: message}
 }
 
 // ask calls an export on the loop; the answer comes through got, once.

@@ -798,6 +798,10 @@ func errorText(err error) string {
 	case errors.Is(err, music.ErrSignIn):
 		return i18n.T("Sign in to play this song")
 	case errors.Is(err, music.ErrSetup):
+		// What the source said says what to do, as "install ffmpeg".
+		if w := music.Words(err); w != "" {
+			return w
+		}
 		return i18n.T("The plugin needs setting up")
 	}
 	return err.Error()

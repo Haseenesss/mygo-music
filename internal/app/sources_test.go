@@ -591,6 +591,49 @@ func TestErrSetupOffersSettings(t *testing.T) {
 	}
 }
 
+// A plugin that needs what no field of it gives, as a program it may start,
+// says so in its own words, on the page and in its settings, and allowing
+// programs takes that away. It used to say "Fill these in for it to work" with
+// nothing to fill in (egoist/mygo-music-youtube-music#3).
+func TestSetupSaysWhatThePluginSaid(t *testing.T) {
+	const said = "Allow it to start programs in its settings"
+	a := newTestApp()
+	ch := posts(a)
+	src := &guardedSource{fakeSource: newFakeSource("guarded")}
+	src.perms.Process = plugin.Programs{"*"}
+	src.playlist = func(string) (*music.Playlist, error) {
+		return nil, &music.Said{Err: music.ErrSetup, Message: said}
+	}
+	lib := addFake(a, src)
+	a.library, lib.askedSetup = lib, true // opening the window takes a real app
+	a.open(route{page: pagePlaylist, src: "guarded", id: "7"})
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+	until(t, ch, func() bool { return lib.needsSetup })
+	tt.Frame()
+	if _, ok := tt.Find(said); !ok {
+		t.Errorf("the page doesn't say what the plugin said: %q", tt.Texts())
+	}
+
+	a.settingsPage = "plugins"
+	settings := ui.NewTester(a.settingsView, 760, 1400)
+	settings.Frame()
+	if _, ok := settings.Find(said); !ok {
+		t.Errorf("the settings don't say what the plugin said: %q", settings.Texts())
+	}
+	if _, ok := settings.Find("Fill these in for it to work"); ok {
+		t.Error("the settings ask to fill in fields the plugin hasn't")
+	}
+	if err := settings.Click("Allow Programs"); err != nil {
+		t.Fatal(err)
+	}
+	until(t, ch, func() bool { return src.Granted() && !lib.needsSetup })
+	settings.Frame()
+	if _, ok := settings.Find(said); ok {
+		t.Error("it still says so once programs are allowed")
+	}
+}
+
 // Sign in to X in the account row opens the dialog, whose Sign In calls the source,
 // and the account shows; Sign Out goes back.
 func TestSignInAndOut(t *testing.T) {
@@ -947,18 +990,14 @@ func TestSettingsAllowPrograms(t *testing.T) {
 	if err := settings.Click("Allow Programs"); err != nil {
 		t.Fatal(err)
 	}
-	runPost(t, ch)
-	if !src.Granted() {
-		t.Fatal("not allowed after allowing")
-	}
+	until(t, ch, src.Granted)
 	settings.Frame()
 	if err := settings.Click("Stop Allowing"); err != nil {
 		t.Fatal(err)
 	}
-	runPost(t, ch)
-	if src.Granted() {
-		t.Fatal("still allowed after stopping")
-	}
+	// Allowing has the plugin load again, and its answers may come before
+	// this one: running just the first left it, at times, still allowed.
+	until(t, ch, func() bool { return !src.Granted() })
 }
 
 // guardedSource is a fake source with permissions, as a plugin has.
