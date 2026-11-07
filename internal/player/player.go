@@ -55,6 +55,8 @@ type Player struct {
 	shuffle bool
 	repeat  RepeatMode
 	volume  float64
+	speed   float64 // how fast it plays, 1 as recorded
+	cover   []byte  // the current track's cover, as the system shows it
 
 	// A radio goes on with the tracks its feed gives, as the queue nears
 	// its end, for as long as nothing else is played.
@@ -105,7 +107,7 @@ type Player struct {
 }
 
 func New(post func(func())) *Player {
-	p := &Player{post: post, at: -1, volume: 0.8, gain: 1}
+	p := &Player{post: post, at: -1, volume: 0.8, gain: 1, speed: 1}
 	p.after = func(d time.Duration, fn func()) { time.AfterFunc(d, fn) }
 	p.now = time.Now
 	// Music, mixed far enough ahead to play on while macOS keeps the app
@@ -148,6 +150,7 @@ func (p *Player) sync() {
 
 // announce shows the system the track, and its cover once loaded.
 func (p *Player) announce(t *music.Track, artwork []byte) {
+	p.cover = artwork
 	state := mygo.PlaybackPaused
 	if p.playing {
 		state = mygo.PlaybackPlaying
@@ -159,6 +162,8 @@ func (p *Player) announce(t *music.Track, artwork []byte) {
 		Artwork:  artwork,
 		Duration: t.Length(),
 		Position: p.Position(),
+		// The system moves its clock on at the speed it plays.
+		Rate:     p.speed,
 		State:    state,
 		Commands: mygo.MediaPlay | mygo.MediaPause | mygo.MediaNext | mygo.MediaPrevious | mygo.MediaSeek,
 	})
@@ -551,6 +556,36 @@ func (p *Player) SetVolume(v float64) {
 	}
 }
 
+// Speeds are those SetSpeed takes, slowest first.
+var Speeds = []float64{0.5, 0.75, 1, 1.25, 1.5, 1.75, 2}
+
+// SetSpeed plays at speed s, 1 as recorded, from now on and for the tracks
+// after: in the voice it was recorded in, as a podcast is listened to at
+// 1.5×, rather than higher, as a record played fast. One outside Speeds is
+// brought within them.
+func (p *Player) SetSpeed(s float64) {
+	s = min(max(s, Speeds[0]), Speeds[len(Speeds)-1])
+	if s == p.speed {
+		return
+	}
+	p.speed = s
+	p.applySpeed()
+	if p.track != nil {
+		p.announce(p.track, p.cover)
+	}
+}
+
+// Speed is how fast it plays, 1 as recorded.
+func (p *Player) Speed() float64 { return p.speed }
+
+// applySpeed plays what's loaded at the speed. At 1 it isn't stretched,
+// which would only cost the mixing.
+func (p *Player) applySpeed() {
+	if p.out != nil {
+		p.out.SetSpeed(p.speed).SetPreservesPitch(p.speed != 1)
+	}
+}
+
 // applyGain sets the volume of what plays: the listener's, which the ear
 // hears in powers, and the track's gain, if normalizing.
 func (p *Player) applyGain() {
@@ -728,6 +763,7 @@ func (p *Player) loadSkipping(at, skipped, dir int, play bool, from time.Duratio
 			}
 			p.fade.attach(p.out, level)
 			p.applyGain()
+			p.applySpeed()
 			p.out.OnEnd(func() {
 				p.post(func() {
 					if gen == p.gen {

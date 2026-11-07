@@ -403,4 +403,6 @@ var zhCN = map[string]string{
 	"Turn it on to sign in to it and change its settings": "打开后才能登录和更改它的设置",
 
 	"Show Less": "收起",
+
+	"Playback Speed": "播放速度",
 }

@@ -76,6 +76,8 @@ type settings struct {
 	// but in its first seconds: the listener chooses it over playing the one
 	// before.
 	PrevRestarts bool `json:"prevRestarts,omitempty"`
+	// Speed is how fast songs and episodes play, 1 as recorded; 0 is 1.
+	Speed float64 `json:"speed,omitempty"`
 	// HotComments shows a song's top comments in its quiet parts, in place of
 	// the lyrics (quietComment), for a source with comments: the listener
 	// turns it on.
