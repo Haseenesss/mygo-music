@@ -369,4 +369,6 @@ var zhCN = map[string]string{
 	"an hour ago":                                                   "1 小时前",
 	"just now":                                                      "刚刚",
 	"yesterday":                                                     "昨天",
+
+	"Show Less": "收起",
 }
