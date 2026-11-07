@@ -64,6 +64,7 @@ func (a *app) setMenu() {
 			mygo.Separator(),
 			{Label: T("Shuffle"), Click: run(func() { a.pl.ToggleShuffle() })},
 			{Label: T("Change Repeat Mode"), Click: run(func() { a.pl.CycleRepeat() })},
+			{Label: T("Playback Speed"), Submenu: a.speedMenu(run)},
 			mygo.Separator(),
 			{Label: T("Now Playing"), Accelerator: "CmdOrCtrl+L", Click: run(func() {
 				a.showMain()

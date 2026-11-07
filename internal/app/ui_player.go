@@ -435,6 +435,9 @@ func (a *app) playerBar(c *ui.Context) {
 			if tr != nil && tr.ShowID != "" {
 				label = T("About This Episode")
 			}
+			if tr != nil {
+				a.speedButton(c, p.muted, p.accent, p.hover)
+			}
 			if iconButton(c.Key("lyrics"), iconLyrics, 16, lyr, label).Clicked() && tr != nil {
 				a.nowPlaying, a.npPane = true, a.lyricsPaneChosen()
 			}

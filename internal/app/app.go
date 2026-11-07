@@ -374,6 +374,9 @@ func Run() error {
 		}
 		a.volume = a.settings.Volume
 		a.pl.SetVolume(a.volume)
+		if a.settings.Speed > 0 {
+			a.pl.SetSpeed(a.settings.Speed)
+		}
 		a.win = mygo.NewWindow(mygo.WindowOptions{
 			Title:         mygo.App.Name(),
 			Width:         1180,
