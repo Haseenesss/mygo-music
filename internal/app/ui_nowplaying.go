@@ -389,8 +389,9 @@ func (a *app) nowPlayingBody(c *ui.Context, tr *music.Track, art *artwork, accen
 				a.npRise(ui.Box(c).Margin(14, 0, 18, 0), 3).Children(func() {
 					a.transport(c, white, white.Alpha(0.45), accent, 28)
 				})
-				a.npRise(ui.Row(c).Justify(ui.Center), 4).Children(func() {
+				a.npRise(ui.Row(c).Justify(ui.Center).AlignItems(ui.Center).Gap(6), 4).Children(func() {
 					a.volumeSlider(c, white.Alpha(0.7), white.Alpha(0.18), 180)
+					a.speedButton(c, white.Alpha(0.7), accent, white.Alpha(0.12))
 				})
 			})
 

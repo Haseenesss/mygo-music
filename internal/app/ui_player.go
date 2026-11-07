@@ -435,9 +435,8 @@ func (a *app) playerBar(c *ui.Context) {
 			if tr != nil && tr.ShowID != "" {
 				label = T("About This Episode")
 			}
-			// An episode, or anything played faster or slower, has its speed.
-			if tr != nil && (tr.ShowID != "" || a.pl.Speed() != 1) {
-				a.speedButton(c, p)
+			if tr != nil {
+				a.speedButton(c, p.muted, p.accent, p.hover)
 			}
 			if iconButton(c.Key("lyrics"), iconLyrics, 16, lyr, label).Clicked() && tr != nil {
 				a.nowPlaying, a.npPane = true, a.lyricsPaneChosen()
