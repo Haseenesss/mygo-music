@@ -74,6 +74,7 @@ type app struct {
 
 	captions  captionState    // the episode playing's captions, and the model they take
 	installer pluginInstaller // installing and updating plugins
+	store     pluginStore     // the plugins on GitHub to install
 	// links are the app's links opened before its window was made, macOS
 	// handing over the one it was started with first.
 	links []string
