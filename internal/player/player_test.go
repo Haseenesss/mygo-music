@@ -266,6 +266,32 @@ func settle(t *testing.T, ch chan func(), p *Player) {
 	}
 }
 
+// A speed plays what's loaded at it, keeping its pitch, and the tracks after
+// it; back at 1 it isn't stretched, and one past the fastest is the fastest.
+func TestSpeedCarriesOn(t *testing.T) {
+	p, ch, q := pickyQueue()
+	defer p.stop()
+	p.PlayTrack(q, 0)
+	settle(t, ch, p)
+	p.SetSpeed(1.5)
+	if p.out.Speed() != 1.5 || !p.out.PreservesPitch() {
+		t.Fatalf("plays at %v, keeping its pitch %v", p.out.Speed(), p.out.PreservesPitch())
+	}
+	p.Next()
+	settle(t, ch, p)
+	if p.Current().ID != "c" || p.out.Speed() != 1.5 || !p.out.PreservesPitch() {
+		t.Fatalf("the next, %s, plays at %v", p.Current().ID, p.out.Speed())
+	}
+	p.SetSpeed(1)
+	if p.out.Speed() != 1 || p.out.PreservesPitch() {
+		t.Errorf("at 1, plays at %v, stretched %v", p.out.Speed(), p.out.PreservesPitch())
+	}
+	p.SetSpeed(10)
+	if p.Speed() != Speeds[len(Speeds)-1] {
+		t.Errorf("plays at %v", p.Speed())
+	}
+}
+
 // A song the listener picks that can't play stays, saying why. Clicking one
 // the source refused for a moment used to play the one after it instead.
 func TestPickedTrackStays(t *testing.T) {
