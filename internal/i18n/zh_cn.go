@@ -377,4 +377,10 @@ var zhCN = map[string]string{
 	"an hour ago":                                                   "1 小时前",
 	"just now":                                                      "刚刚",
 	"yesterday":                                                     "昨天",
+
+	"%s Details":    "%s 详情",
+	"Remove %s":     "移除 %s",
+	"Done":          "完成",
+	"Not signed in": "未登录",
+	"Turn it on to sign in to it and change its settings": "打开后才能登录和更改它的设置",
 }

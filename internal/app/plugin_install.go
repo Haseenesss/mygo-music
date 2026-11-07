@@ -642,29 +642,3 @@ func (a *app) pluginUpdateError(c *ui.Context, lib *library, p palette) {
 		ui.Text(c, T("Couldn't check for updates")).FontSize(12).TextColor(p.accent)
 	}
 }
-
-// pluginMenu is what else can be done with a plugin: showing its folder, and
-// removing it, but the last one on, as there would be nothing to show.
-func (a *app) pluginMenu(c *ui.Context, lib *library, p palette) {
-	plug := pluginOf(lib)
-	if plug == nil {
-		return
-	}
-	more := iconButton(c.Key("plugin-more"), iconMore, 16, p.muted, Tf("More for %s", lib.name()))
-	more.Menu(func(m *ui.Menu) {
-		if plug.Origin() != nil {
-			busy := a.installer.checked[lib.id] == checking || a.installer.updating[lib.id]
-			if m.Item(T("Check for Updates")).Disabled(busy).Chosen() {
-				a.checkPluginUpdate(lib)
-			}
-		}
-		if m.Item(T("Show Folder")).Chosen() {
-			revealFolder(plug.Dir())
-		}
-		m.Separator()
-		last := len(a.libs) == 1 && a.libs[0] == lib
-		if m.Item(T("Remove…")).Disabled(last || a.installer.updating[lib.id]).Chosen() {
-			confirmRemovePlugin(a, lib.name(), func() { a.removePlugin(lib) })
-		}
-	})
-}

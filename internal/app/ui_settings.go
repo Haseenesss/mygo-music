@@ -225,6 +225,7 @@ func (a *app) settingsView(c *ui.Context) {
 		})
 	})
 	a.installDialog(c, p)
+	a.pluginDetails(c, p)
 	a.signInDialog(c, p, true)
 }
 
@@ -591,70 +592,163 @@ func (a *app) localSettings(c *ui.Context, lib *library, row settingsRow, block 
 func (a *app) pluginSettings(c *ui.Context, lib *library, p palette) {
 	info := lib.src.Info()
 	enabled := a.pluginEnabled(lib)
-	ui.Column(c).Padding(12, 16).Gap(10).Children(func() {
-		ui.Row(c).Gap(10).AlignItems(ui.Center).MinHeight(24).Children(func() {
-			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(3).Children(func() {
-				name := lib.name()
-				if info.Version != "" {
-					name += " " + info.Version
-				}
-				ui.Text(c, name).FontSize(13.5).FontWeight(500)
-				// Where it came from, a link to its repository, and who's signed
-				// in, on one line.
-				from, url := pluginFrom(lib)
-				signedIn := ""
-				if enabled && !lib.needsSetup && lib.account != nil {
-					signedIn = Tf("Signed in as %s", lib.account.Name)
-				}
-				if from != "" || signedIn != "" {
-					ui.Row(c).MinWidth(0).Children(func() {
-						if url != "" {
-							ui.Link(c, from, url).FontSize(12).TextColor(p.muted).SingleLine().Shrink(0).Tooltip(T("Open on GitHub"))
-						} else if from != "" {
-							ui.Text(c, from).FontSize(12).TextColor(p.muted).SingleLine().Shrink(0)
-						}
-						if signedIn != "" {
-							if from != "" {
-								signedIn = " · " + signedIn
-							}
-							ui.Text(c, signedIn).FontSize(12).TextColor(p.muted).SingleLine().Shrink(1).MinWidth(0)
-						}
-					})
-				}
-				if enabled && lib.needsSetup {
-					ui.Text(c, T("Fill these in for it to work")).FontSize(12).TextColor(p.accent).LineHeight(1.4)
-				}
-				a.pluginUpdateError(c, lib, p)
-			})
-			a.pluginUpdateButton(c, lib)
-			switch {
-			case !enabled:
-			case lib.account == nil && lib.accountUnknown():
-				// A source not yet used hasn't said who's signed in: asked now, its
-				// row offers no sign-in to someone who already is.
-				a.loadAccount(lib)
-			case lib.account != nil && lib.can("signOut"):
-				if ui.Button(c.Key("sign-out"), T("Sign Out")).Clicked() {
-					a.signOut(lib)
-				}
-			case lib.account == nil && lib.can("signIn"):
-				if ui.PrimaryButton(c.Key("sign-in"), T("Sign In")).Clicked() {
-					a.promptSignInInSettings(lib)
-				}
+	if enabled && lib.account == nil && lib.accountUnknown() {
+		// A source not yet used hasn't said who's signed in: asked now, for its
+		// row to say.
+		a.loadAccount(lib)
+	}
+	ui.Row(c).Padding(12, 16).Gap(10).AlignItems(ui.Center).MinHeight(48).Children(func() {
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(3).Children(func() {
+			name := lib.name()
+			if info.Version != "" {
+				name += " " + info.Version
 			}
-			a.pluginMenu(c, lib, p)
-			a.pluginSwitch(c, lib)
+			ui.Text(c, name).FontSize(13.5).FontWeight(500)
+			a.pluginOrigin(c, lib, p)
+			if enabled && lib.needsSetup {
+				ui.Text(c, T("Fill these in for it to work")).FontSize(12).TextColor(p.accent).LineHeight(1.4)
+			}
+			a.pluginUpdateError(c, lib, p)
 		})
-		if !enabled {
-			return
+		a.pluginUpdateButton(c, lib)
+		if iconButton(c.Key("plugin-more"), iconMore, 16, p.muted, Tf("%s Details", lib.name())).Clicked() {
+			a.pluginCard, a.pluginCardOpen = lib, true
 		}
-		if g, ok := lib.src.(guarded); ok {
-			a.pluginPermissions(c.Key("permissions"), lib, g, p)
+		a.pluginSwitch(c, lib)
+	})
+}
+
+// pluginOrigin is where a plugin came from, a link to its repository, and
+// who's signed in, on one line.
+func (a *app) pluginOrigin(c *ui.Context, lib *library, p palette) {
+	from, url := pluginFrom(lib)
+	signedIn := ""
+	if a.pluginEnabled(lib) && !lib.needsSetup && lib.account != nil {
+		signedIn = Tf("Signed in as %s", lib.account.Name)
+	}
+	if from == "" && signedIn == "" {
+		return
+	}
+	ui.Row(c).MinWidth(0).Children(func() {
+		if url != "" {
+			ui.Link(c, from, url).FontSize(12).TextColor(p.muted).SingleLine().Shrink(0).Tooltip(T("Open on GitHub"))
+		} else if from != "" {
+			ui.Text(c, from).FontSize(12).TextColor(p.muted).SingleLine().Shrink(0)
 		}
-		for _, st := range info.Settings {
-			a.sourceSetting(c.Key(st.Key), lib, st, p)
+		if signedIn != "" {
+			if from != "" {
+				signedIn = " · " + signedIn
+			}
+			ui.Text(c, signedIn).FontSize(12).TextColor(p.muted).SingleLine().Shrink(1).MinWidth(0)
 		}
 	})
+}
+
+// openPluginSetup shows the card of a plugin that needs setting up, over the
+// plugins' settings.
+func (a *app) openPluginSetup(lib *library) {
+	a.openSourceSettings()
+	if lib.id != local.ID {
+		a.pluginCard, a.pluginCardOpen = lib, true
+	}
+}
+
+// pluginDetails is a plugin's card, which its row's … opens: who's signed in to
+// it, what it may do, its settings, and its updates, folder and removal.
+func (a *app) pluginDetails(c *ui.Context, p palette) {
+	lib := a.pluginCard
+	if lib != nil && !slices.Contains(a.allLibs, lib) {
+		// Removed.
+		a.pluginCardOpen = false
+	}
+	ui.DialogBase(c.Key("plugin-card"), &a.pluginCardOpen, func(backdrop, panel ui.Element) {
+		backdrop.Background(ui.RGBA(0, 0, 0, 0.35))
+		panel.Width(440).MaxHeightPercent(85).Radius(18).
+			Background(p.bg).Border(1, p.hairline).Shadow(0, 24, 60, -12, ui.RGBA(0, 0, 0, 0.4)).
+			Transition(ui.ElementTransition{Animation: &ui.Snappy, Enter: &ui.Motion{Scale: 0.94}, Exit: &ui.Motion{Scale: 0.96}})
+		if lib == nil {
+			return
+		}
+		c := c.Key(lib.id)
+		info := lib.src.Info()
+		enabled := a.pluginEnabled(lib)
+		plug := pluginOf(lib)
+		ui.Scroll(c.Key("body")).Shrink(1).MinHeight(0).Padding(24, 24, 8, 24).Gap(12).Children(func() {
+			ui.Column(c).Gap(4).Children(func() {
+				ui.Row(c).Gap(8).AlignItems(ui.Baseline).Children(func() {
+					ui.Text(c, lib.name()).FontSize(17).FontWeight(700).Shrink(1).MinWidth(0)
+					if info.Version != "" {
+						ui.Text(c, info.Version).FontSize(13).TextColor(p.muted).SingleLine()
+					}
+				})
+				if from, url := pluginFrom(lib); url != "" {
+					ui.Link(c, from, url).FontSize(12.5).TextColor(p.muted).SingleLine().Tooltip(T("Open on GitHub"))
+				} else if from != "" {
+					ui.Text(c, from).FontSize(12.5).TextColor(p.muted).SingleLine()
+				}
+			})
+			if !enabled {
+				ui.Text(c, T("Turn it on to sign in to it and change its settings")).FontSize(12.5).TextColor(p.muted).LineHeight(1.4)
+			} else {
+				a.pluginAccount(c, lib, p)
+				if lib.needsSetup {
+					ui.Text(c, T("Fill these in for it to work")).FontSize(12.5).TextColor(p.accent).LineHeight(1.4)
+				}
+				if g, ok := lib.src.(guarded); ok {
+					a.pluginPermissions(c.Key("permissions"), lib, g, p)
+				}
+				for _, st := range info.Settings {
+					a.sourceSetting(c.Key(st.Key), lib, st, p)
+				}
+			}
+			if plug != nil && plug.Origin() != nil {
+				ui.Row(c).Gap(10).AlignItems(ui.Center).MinHeight(28).Children(func() {
+					ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() { a.pluginUpdateError(c, lib, p) })
+					busy := a.installer.checked[lib.id] == checking || a.installer.updating[lib.id]
+					if ui.Button(c.Key("check"), T("Check for Updates")).Disabled(busy).Clicked() {
+						a.checkPluginUpdate(lib)
+					}
+					a.pluginUpdateButton(c, lib)
+				})
+			}
+		})
+		ui.Row(c).Gap(10).AlignItems(ui.Center).Padding(12, 24, 24, 24).Children(func() {
+			if plug != nil {
+				if ui.Button(c.Key("folder"), T("Show Folder")).Clicked() {
+					revealFolder(plug.Dir())
+				}
+				last := len(a.libs) == 1 && a.libs[0] == lib
+				if ui.Button(c.Key("remove"), T("Remove…")).Label(Tf("Remove %s", lib.name())).Disabled(last || a.installer.updating[lib.id]).Clicked() {
+					confirmRemovePlugin(a, lib.name(), func() { a.removePlugin(lib) })
+				}
+			}
+			ui.Spacer(c)
+			if pillButton(c.Key("done"), nil, T("Done"), p.accent, p.onAccent).Clicked() {
+				a.pluginCardOpen = false
+			}
+		})
+	})
+}
+
+// pluginAccount is who's signed in to a plugin, with a way to sign out, or a
+// way to sign in.
+func (a *app) pluginAccount(c *ui.Context, lib *library, p palette) {
+	switch {
+	case lib.account != nil:
+		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, Tf("Signed in as %s", lib.account.Name)).FontSize(13).Grow(1).Shrink(1).MinWidth(0)
+			if lib.can("signOut") && ui.Button(c.Key("sign-out"), T("Sign Out")).Clicked() {
+				a.signOut(lib)
+			}
+		})
+	case lib.can("signIn") && !lib.accountUnknown():
+		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, T("Not signed in")).FontSize(13).TextColor(p.muted).Grow(1).Shrink(1).MinWidth(0)
+			if ui.PrimaryButton(c.Key("sign-in"), T("Sign In")).Clicked() {
+				a.promptSignInInSettings(lib)
+			}
+		})
+	}
 }
 
 // pluginEnabled reports whether a plugin is on.

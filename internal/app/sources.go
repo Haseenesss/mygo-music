@@ -246,7 +246,7 @@ func (a *app) problem(lib *library, err error, msg string) string {
 		lib.needsSetup = true
 		if !lib.askedSetup {
 			lib.askedSetup = true
-			a.openSourceSettings()
+			a.openPluginSetup(lib)
 		}
 		return Tf("%s needs setting up first", lib.name())
 	case errors.Is(err, music.ErrUnsupported):
@@ -263,7 +263,7 @@ func (a *app) actionFailed(lib *library, err error, msg string) {
 	case errors.Is(err, music.ErrSignIn):
 		a.promptSignIn(lib)
 	case errors.Is(err, music.ErrSetup):
-		a.openSourceSettings()
+		a.openPluginSetup(lib)
 	default:
 		a.toast = msg
 	}

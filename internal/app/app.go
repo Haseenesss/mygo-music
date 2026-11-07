@@ -76,6 +76,10 @@ type app struct {
 	installer pluginInstaller // installing and updating plugins
 	store     pluginStore     // the plugins on GitHub to install
 	pluginTab int             // what the plugins' settings show: pluginsInstalled or pluginsDiscover
+	// pluginCard is the plugin whose card shows over the plugins' settings, if
+	// pluginCardOpen.
+	pluginCard     *library
+	pluginCardOpen bool
 	// links are the app's links opened before its window was made, macOS
 	// handing over the one it was started with first.
 	links []string
