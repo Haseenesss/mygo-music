@@ -188,6 +188,10 @@ func (a *app) settingsView(c *ui.Context) {
 				if query == "" {
 					if current.id == "plugins" {
 						a.pluginTabs(c)
+						if a.pluginTab == pluginsDiscover {
+							a.storePage(c, p)
+							return
+						}
 					}
 					a.settingsGroup(c, p, current, "", "")
 					return
@@ -384,7 +388,8 @@ func (a *app) settingsSections(c *ui.Context, p palette) []settingsSection {
 		if searching || a.pluginTab == pluginsInstalled {
 			a.sourceSettings(c, row, block, p)
 		}
-		if searching || a.pluginTab == pluginsDiscover {
+		// The Discover tab draws its cards itself (storePage).
+		if searching {
 			a.storeSettings(c, block, p)
 		}
 	})
