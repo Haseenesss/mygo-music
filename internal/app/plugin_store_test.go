@@ -9,9 +9,9 @@ import (
 	"mygo-music/internal/plugin"
 )
 
-// The store asks GitHub for its plugins once, as it's first shown, and offers
-// to install those that aren't; Install downloads one to ask about it, as From
-// GitHub… does.
+// The plugins' Discover tab asks GitHub for its plugins once, as it's first
+// shown, and offers to install those that aren't; Install downloads one to ask
+// about it, as From GitHub… does.
 func TestStoreInstallsWhatItLists(t *testing.T) {
 	asked := make(chan bool, 4)
 	wasList, wasFetch := listPlugins, fetchPlugin
@@ -28,8 +28,12 @@ func TestStoreInstallsWhatItLists(t *testing.T) {
 	a := newTestApp()
 	ch := posts(a)
 	addFake(a, githubPlugin(t)) // from o/gh
-	a.settingsPage = "store"
+	a.settingsPage = "plugins"
 	tt := ui.NewTester(a.settingsView, 780, 1000)
+	tt.Frame()
+	if err := tt.Click("Discover"); err != nil {
+		t.Fatal(err)
+	}
 	tt.Frame()
 	wait(t, asked, "the list")
 	runPost(t, ch)
@@ -67,8 +71,12 @@ func TestStoreRefreshesAfterFailing(t *testing.T) {
 	}
 	a := newTestApp()
 	ch := posts(a)
-	a.settingsPage = "store"
+	a.settingsPage = "plugins"
 	tt := ui.NewTester(a.settingsView, 780, 1000)
+	tt.Frame()
+	if err := tt.Click("Discover"); err != nil {
+		t.Fatal(err)
+	}
 	tt.Frame()
 	runPost(t, ch)
 	tt.Frame()

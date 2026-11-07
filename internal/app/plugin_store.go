@@ -8,6 +8,20 @@ import (
 	"mygo-music/internal/plugin"
 )
 
+// The tabs of the plugins' settings.
+const (
+	pluginsInstalled = iota
+	pluginsDiscover
+)
+
+// pluginTabs switches the plugins' settings between those installed and those
+// on GitHub to discover.
+func (a *app) pluginTabs(c *ui.Context) {
+	ui.Row(c).Justify(ui.Center).Margin(0, 0, 6, 0).Children(func() {
+		segmented(c.Key("plugin-tabs"), &a.pluginTab, T("Installed"), T("Discover"))
+	})
+}
+
 // listPlugins lists the plugins on GitHub, by their topic; tests replace it.
 var listPlugins = plugin.Listed
 
@@ -61,7 +75,7 @@ func (a *app) installListed(repo string) {
 	a.installFromRepo()
 }
 
-// storeSettings is the store's page: the plugins on GitHub with the topic, each
+// storeSettings is the plugins' Discover tab: the plugins on GitHub with the topic, each
 // found by a search of the settings by its name or what it says it does.
 func (a *app) storeSettings(c *ui.Context, block settingsBlock, p palette) {
 	s := &a.store
