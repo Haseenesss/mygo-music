@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -60,35 +61,55 @@ func TestArtistNameOpensTheirPage(t *testing.T) {
 	}
 }
 
-// An artist's Albums tab lists their albums, each opening its page, and is
-// still chosen on the way back.
-func TestArtistAlbums(t *testing.T) {
+// An artist's page lists their first 10 songs, playing on through all of them
+// from the one clicked, and the rest once asked for; then their albums, and
+// apart from these their singles and EPs, each opening its page.
+func TestArtistSections(t *testing.T) {
 	a := newTestApp()
+	var songs []music.Track
+	for i := range 14 {
+		songs = append(songs, song(fmt.Sprint(i+1), fmt.Sprintf("歌%d", i+1)))
+	}
 	a.artists["12"] = &artistData{page: &music.ArtistPage{
 		Artist: music.Artist{ID: "12", Name: "乙"},
-		Tracks: []music.Track{song("1", "老歌")},
-		Albums: []music.Album{{ID: "8", Name: "迷跡波"}},
+		Tracks: songs,
+		Albums: []music.Album{{ID: "8", Name: "迷跡波", Kind: "album"}, {ID: "9", Name: "春日影", Kind: "single"}},
 	}}
 	a.open(route{page: pageArtist, id: "12"})
-	tt := ui.NewTester(a.view, 1200, 800)
+	tt := ui.NewTester(a.view, 1200, 2400)
 	tt.Frame()
-	if _, ok := tt.Find("迷跡波"); ok {
-		t.Fatal("the albums show before their tab is chosen")
+	if _, ok := tt.Find("歌10"); !ok {
+		t.Fatal("the 10th song doesn't show")
 	}
-	if err := tt.Click("Albums"); err != nil {
+	if _, ok := tt.Find("歌11"); ok {
+		t.Fatal("more than 10 songs show before they're asked for")
+	}
+	albums, ok := tt.Find("迷跡波")
+	single, ok2 := tt.Find("春日影")
+	singles, ok3 := tt.Find("Singles & EPs")
+	if !ok || !ok2 || !ok3 || !(albums.Y < singles.Y && singles.Y < single.Y) {
+		t.Fatalf("album at %v, singles' heading at %v, single at %v", albums, singles, single)
+	}
+
+	if err := tt.Click("歌3"); err != nil {
+		t.Fatal(err)
+	}
+	if cur := a.pl.Current(); cur == nil || cur.ID != "3" || len(a.pl.Queue()) != len(songs) {
+		t.Fatalf("playing %+v of %d", cur, len(a.pl.Queue()))
+	}
+	if err := tt.Click("Show All 14 Songs"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if err := tt.Click("迷跡波"); err != nil {
+	if _, ok := tt.Find("歌14"); !ok {
+		t.Error("the rest don't show once asked for")
+	}
+
+	if err := tt.Click("春日影"); err != nil {
 		t.Fatal(err)
 	}
-	if a.route != (route{page: pageAlbum, src: "fake", id: "8"}) {
-		t.Fatalf("the album opened %+v", a.route)
-	}
-	tt.Key(0, ui.KeyBack)
-	tt.Frame()
-	if _, ok := tt.Find("迷跡波"); !ok {
-		t.Error("the tab went back to the songs")
+	if a.route != (route{page: pageAlbum, src: "fake", id: "9"}) {
+		t.Fatalf("the single opened %+v", a.route)
 	}
 }
 
