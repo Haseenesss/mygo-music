@@ -62,7 +62,7 @@ func (a *app) openSettings() {
 
 // openSourceSettings shows the page of the settings where plugins are set up.
 func (a *app) openSourceSettings() {
-	a.settingsPage, a.settingsQuery = "plugins", ""
+	a.settingsPage, a.settingsQuery, a.pluginTab = "plugins", "", pluginsInstalled
 	a.openSettings()
 }
 
@@ -186,6 +186,9 @@ func (a *app) settingsView(c *ui.Context) {
 					a.settingsUnderTop = mark.Y < pad-0.5
 				}
 				if query == "" {
+					if current.id == "plugins" {
+						a.pluginTabs(c)
+					}
 					a.settingsGroup(c, p, current, "", "")
 					return
 				}
@@ -375,8 +378,16 @@ func (a *app) settingsSections(c *ui.Context, p palette) []settingsSection {
 		}
 	})
 
-	add("plugins", T("Plugins"), iconPlug, func(row settingsRow, block settingsBlock) { a.sourceSettings(c, row, block, p) })
-	add("store", T("Plugin Store"), iconStore, func(row settingsRow, block settingsBlock) { a.storeSettings(c, block, p) })
+	// Those installed, or those on GitHub to discover; a search goes through both.
+	add("plugins", T("Plugins"), iconPlug, func(row settingsRow, block settingsBlock) {
+		searching := strings.TrimSpace(a.settingsQuery) != ""
+		if searching || a.pluginTab == pluginsInstalled {
+			a.sourceSettings(c, row, block, p)
+		}
+		if searching || a.pluginTab == pluginsDiscover {
+			a.storeSettings(c, block, p)
+		}
+	})
 
 	// Only on macOS, the one with a notch player.
 	if a.notch != nil {
