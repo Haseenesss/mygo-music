@@ -65,6 +65,7 @@ type library struct {
 	// ErrSetup, and asked says the listener was already taken there once.
 	needsSignIn, needsSetup bool
 	askedSignIn, askedSetup bool
+	setupWords              string // what it said to do to set it up, if it did
 
 	mine, saved []music.Playlist // the listener's playlists: made, and saved
 	mineAt      time.Time        // when they were last asked for
@@ -243,10 +244,14 @@ func (a *app) problem(lib *library, err error, msg string) string {
 		}
 		return Tf("Sign in to %s to see this", lib.name())
 	case errors.Is(err, music.ErrSetup):
-		lib.needsSetup = true
+		lib.needsSetup, lib.setupWords = true, music.Words(err)
 		if !lib.askedSetup {
 			lib.askedSetup = true
 			a.openSourceSettings()
+		}
+		// What it said says what to do, as a plugin's settings may not.
+		if lib.setupWords != "" {
+			return lib.setupWords
 		}
 		return Tf("%s needs setting up first", lib.name())
 	case errors.Is(err, music.ErrUnsupported):

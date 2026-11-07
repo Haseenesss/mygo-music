@@ -339,6 +339,24 @@ var (
 	ErrUnsupported = errors.New("not supported by this source")
 )
 
+// Said is one of those errors with what the source said of it, in the
+// listener's words, as a plugin's that comes with a message.
+type Said struct {
+	Err     error
+	Message string
+}
+
+func (e *Said) Error() string { return e.Err.Error() + ": " + e.Message }
+func (e *Said) Unwrap() error { return e.Err }
+
+// Words is what the source said of err for the listener, if it said anything.
+func Words(err error) string {
+	if s, ok := errors.AsType[*Said](err); ok {
+		return s.Message
+	}
+	return ""
+}
+
 // Qualities are the levels of audio the listener can ask a source for, worst
 // first. A source may have others, or none, and answers what it has.
 var Qualities = []string{"standard", "high", "lossless"}

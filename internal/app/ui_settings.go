@@ -610,7 +610,7 @@ func (a *app) pluginSettings(c *ui.Context, lib *library, p palette) {
 					})
 				}
 				if enabled && lib.needsSetup {
-					ui.Text(c, T("Fill these in for it to work")).FontSize(12).TextColor(p.accent).LineHeight(1.4)
+					ui.Text(c, setupLine(lib, info)).FontSize(12).TextColor(p.accent).LineHeight(1.4)
 				}
 				a.pluginUpdateError(c, lib, p)
 			})
@@ -643,6 +643,18 @@ func (a *app) pluginSettings(c *ui.Context, lib *library, p palette) {
 			a.sourceSetting(c.Key(st.Key), lib, st, p)
 		}
 	})
+}
+
+// setupLine says what a plugin needs to work: what it said, or to fill in its
+// fields. One with none may need what no field gives, as a program installed.
+func setupLine(lib *library, info music.Info) string {
+	switch {
+	case lib.setupWords != "":
+		return lib.setupWords
+	case len(info.Settings) > 0:
+		return T("Fill these in for it to work")
+	}
+	return T("The plugin needs setting up")
 }
 
 // pluginEnabled reports whether a plugin is on.
@@ -711,6 +723,8 @@ func (a *app) grantPrograms(lib *library, g guarded, on bool) {
 				a.actionFailed(lib, err, T("Couldn't change that"))
 				return
 			}
+			// What it needed may have been this: asked again, it says if not.
+			lib.needsSetup, lib.askedSetup, lib.setupWords = false, false, ""
 			a.libraryChanged(lib)
 		})
 	}()
@@ -754,7 +768,7 @@ func (a *app) keepSetting(lib *library, key, value string) {
 				a.toast = Tf("Couldn't keep the setting: %s", err.Error())
 				return
 			}
-			lib.needsSetup, lib.askedSetup = false, false
+			lib.needsSetup, lib.askedSetup, lib.setupWords = false, false, ""
 			a.libraryChanged(lib)
 			a.loadAccount(lib)
 		})
