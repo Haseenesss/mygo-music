@@ -151,11 +151,20 @@ func TestStoreKeepsWhatGitHubListed(t *testing.T) {
 		t.Fatalf("Refresh asked GitHub %d times in all", asked)
 	}
 
-	data, _ := json.Marshal(storeFile{At: time.Now().Add(-storeFresh - time.Minute), Listed: []plugin.Listing{{Repo: "owner/old"}}})
+	data, _ := json.Marshal(storeFile{Version: storeVersion, At: time.Now().Add(-storeFresh - time.Minute), Listed: []plugin.Listing{{Repo: "owner/old"}}})
 	os.WriteFile(file, data, 0o644)
 	_, ch, _ = launch()
 	runPost(t, ch)
 	if asked != 3 {
 		t.Errorf("didn't ask again for a list kept %v", storeFresh)
+	}
+
+	// One kept fresh by a version that kept it otherwise.
+	data, _ = json.Marshal(storeFile{At: time.Now(), Listed: []plugin.Listing{{Repo: "owner/old"}}})
+	os.WriteFile(file, data, 0o644)
+	_, ch, _ = launch()
+	runPost(t, ch)
+	if asked != 4 {
+		t.Errorf("took a list kept by another version")
 	}
 }
