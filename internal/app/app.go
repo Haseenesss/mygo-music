@@ -36,6 +36,12 @@ const (
 	pageSection
 )
 
+// place is where a page was scrolled as it was left.
+type place struct {
+	list   ui.ListState
+	scroll ui.ScrollState
+}
+
 type route struct {
 	page pageKind
 	// src is the ID of the source the page is of. Opened without one, a page
@@ -104,6 +110,11 @@ type app struct {
 	pageScroll ui.ScrollState
 	navScroll  ui.ScrollState
 	scrolled   route // the page trackList and pageScroll are of
+	// places are where the pages one can go back or forward to were left,
+	// for them to show again there; returning tells that the page shown was
+	// gone back or forward to, rather than opened anew.
+	places    map[route]place
+	returning bool
 
 	mineCollapsed, savedCollapsed bool
 

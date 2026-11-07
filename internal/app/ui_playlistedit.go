@@ -242,6 +242,7 @@ func (a *app) deleteChosen() {
 		r := route{page: pageHome, src: lib.id}
 		if n := len(a.history); n > 0 {
 			r, a.history = a.history[n-1], a.history[:n-1]
+			a.returning = true
 		}
 		a.show(r)
 	}
