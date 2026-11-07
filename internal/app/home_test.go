@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -374,4 +375,83 @@ func TestLibraryChangedReloadsWhatShows(t *testing.T) {
 		t.Fatalf("asked for %q", page)
 	}
 	until(t, ch, func() bool { return a.browses["top"].page.Title == "Page top" })
+}
+
+// Back from a page opened lower down Home shows Home where it was scrolled,
+// while Home opened anew starts at its top. Each page shown used to clear
+// trackList and pageScroll, which nothing kept for the way back, so back
+// always went to the top of Home.
+func TestBackKeepsWhereHomeWasScrolled(t *testing.T) {
+	for _, own := range []bool{true, false} {
+		a := newTestApp()
+		var names []string
+		if own {
+			// The source's own Home, a List of shelves.
+			a.home = &music.Browse{}
+			for i := range 16 {
+				name := fmt.Sprintf("专辑 %d", i)
+				names = append(names, name)
+				a.home.Sections = append(a.home.Sections, music.Section{Title: fmt.Sprintf("Shelf %d", i), Albums: []music.Album{{ID: fmt.Sprint(i), Name: name}}})
+			}
+		} else {
+			// The one made of its playlists, in a Scroll.
+			for i := range 40 {
+				name := fmt.Sprintf("歌单 %d", i)
+				names = append(names, name)
+				a.mine = append(a.mine, music.Playlist{ID: fmt.Sprint(i), Name: name, Mine: true})
+			}
+			a.mineCollapsed = true
+		}
+		tt := ui.NewTester(a.view, 1200, 800)
+		tt.Frame()
+		top, ok := tt.Find(names[0])
+		if !ok {
+			t.Fatalf("own %v: no %s on Home", own, names[0])
+		}
+		tt.Scroll(800, 400, 0, 1500)
+		tt.Advance(time.Second)
+		tt.Frame()
+		tt.Frame()
+		// A card well inside the window once scrolled.
+		name, at := "", ui.Rect{}
+		for _, n := range names[1:] {
+			if r, ok := tt.Find(n); ok && r.Y > 150 && r.Y+r.H < 650 {
+				name, at = n, r
+				break
+			}
+		}
+		if name == "" {
+			t.Fatalf("own %v: no card in view after scrolling: %q", own, tt.Texts())
+		}
+		if err := tt.Click(name); err != nil {
+			t.Fatal(err)
+		}
+		if a.route.page == pageHome {
+			t.Fatalf("own %v: %s opened nothing", own, name)
+		}
+		tt.Frame()
+		tt.Key(0, ui.KeyBack)
+		tt.Frame()
+		tt.Frame()
+		if a.route.page != pageHome {
+			t.Fatalf("own %v: back went to %+v", own, a.route)
+		}
+		if r, ok := tt.Find(name); !ok || r.Y != at.Y {
+			t.Errorf("own %v: back on Home, %s is at %v (%v); was at %v", own, name, r.Y, ok, at.Y)
+		}
+
+		// Opened again from the sidebar, Home starts at its top.
+		if err := tt.Click(name); err != nil {
+			t.Fatal(err)
+		}
+		tt.Frame()
+		if err := tt.Click("Home"); err != nil {
+			t.Fatal(err)
+		}
+		tt.Frame()
+		tt.Frame()
+		if r, ok := tt.Find(names[0]); !ok || r.Y != top.Y {
+			t.Errorf("own %v: Home opened anew shows %s at %v (%v); want its top, %v", own, names[0], r.Y, ok, top.Y)
+		}
+	}
 }

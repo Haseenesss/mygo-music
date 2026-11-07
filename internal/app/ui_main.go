@@ -2,6 +2,7 @@ package app
 
 import (
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/egoist/mygo/plugins/glass"
@@ -117,6 +118,7 @@ func (a *app) open(r route) {
 		return
 	}
 	a.history, a.forward = append(a.history, a.route), nil
+	a.returning = false
 	a.show(r)
 }
 
@@ -194,6 +196,7 @@ func (a *app) back() {
 	a.forward = append(a.forward, a.route)
 	r := a.history[len(a.history)-1]
 	a.history = a.history[:len(a.history)-1]
+	a.returning = true
 	a.show(r)
 }
 
@@ -207,6 +210,7 @@ func (a *app) goForward() {
 	r := a.forward[len(a.forward)-1]
 	a.forward = a.forward[:len(a.forward)-1]
 	a.nowPlaying = false
+	a.returning = true
 	a.show(r)
 }
 
@@ -375,10 +379,11 @@ func (a *app) pageTop(c *ui.Context) {
 }
 
 func (a *app) content(c *ui.Context) {
-	// A new page starts at its top. Not as it is opened: a control in a
-	// list, as a page's tabs in its header, opens it as the list builds.
+	// A new page starts at its top, and one gone back or forward to where it
+	// was left. Not as it is opened: a control in a list, as a page's tabs in
+	// its header, opens it as the list builds.
 	if a.scrolled != a.route {
-		a.trackList, a.pageScroll, a.scrolled = ui.ListState{}, ui.ScrollState{}, a.route
+		a.turnPage()
 	}
 	// Pages mark where their content is, as they scroll.
 	a.underTop, a.underBottom = false, false
@@ -407,6 +412,27 @@ func (a *app) content(c *ui.Context) {
 		a.browsePage(c)
 	case pageSection:
 		a.sectionPage(c)
+	}
+}
+
+// turnPage keeps where the page left was scrolled, for going back or
+// forward to it, and shows the page now open where it was left, if it was
+// gone back or forward to, else from its top.
+func (a *app) turnPage() {
+	if a.places == nil {
+		a.places = map[route]place{}
+	}
+	a.places[a.scrolled] = place{a.trackList, a.pageScroll}
+	p, ok := a.places[a.route]
+	if !ok || !a.returning {
+		p = place{}
+	}
+	a.trackList, a.pageScroll, a.scrolled, a.returning = p.list, p.scroll, a.route, false
+	// Keep only the places of pages there's a way back or forward to.
+	for r := range a.places {
+		if !slices.Contains(a.history, r) && !slices.Contains(a.forward, r) {
+			delete(a.places, r)
+		}
 	}
 }
 
