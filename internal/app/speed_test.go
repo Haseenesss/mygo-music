@@ -2,17 +2,19 @@ package app
 
 import (
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
 	"mygo-music/internal/music"
 )
 
-// An episode's speed, chosen in the player bar, plays it and what follows at
-// that speed, and is kept. A song shows its speed only while it isn't 1.
-func TestEpisodeSpeed(t *testing.T) {
+// A speed chosen in the player bar, or over Now Playing, plays what's playing
+// and what follows at it, and is kept. It used to be offered only for an
+// episode in the player bar, so it couldn't be found while a song played.
+func TestChooseSpeed(t *testing.T) {
 	a := newTestApp()
-	a.pl.Cue([]music.Track{{ID: "13", Name: "第一期", ShowID: "5", Duration: 600000}})
+	a.pl.Cue([]music.Track{song("1", "老歌")})
 	tt := ui.NewTester(a.view, 1200, 800)
 	tt.Frame()
 	if err := tt.Click("Playback Speed"); err != nil {
@@ -25,19 +27,17 @@ func TestEpisodeSpeed(t *testing.T) {
 		t.Fatalf("plays at %v, keeps %v", a.pl.Speed(), a.settings.Speed)
 	}
 
-	a.pl.Cue([]music.Track{song("1", "老歌")})
+	a.nowPlaying = true
+	tt.Frame()
+	tt.Advance(time.Second)
 	tt.Frame()
 	if err := tt.Click("Playback Speed"); err != nil {
-		t.Fatalf("a song played faster can't be slowed: %v", err)
+		t.Fatalf("Now Playing has no speed: %v", err)
 	}
 	if err := tt.ChooseMenuItem("1×"); err != nil {
 		t.Fatalf("%v; the menu shows %q", err, tt.Menu())
 	}
-	tt.Frame()
-	if a.pl.Speed() != 1 {
-		t.Errorf("plays at %v", a.pl.Speed())
-	}
-	if _, ok := tt.Find("Playback Speed"); ok {
-		t.Error("a song at 1 has a speed to choose")
+	if a.pl.Speed() != 1 || a.settings.Speed != 1 {
+		t.Errorf("plays at %v, keeps %v", a.pl.Speed(), a.settings.Speed)
 	}
 }

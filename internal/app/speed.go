@@ -25,16 +25,16 @@ func (a *app) setSpeed(s float64) {
 	a.redraw()
 }
 
-// speedButton says how fast what's playing plays, and its menu changes it.
-func (a *app) speedButton(c *ui.Context, p palette) {
+// speedButton says how fast what's playing plays, in color, or in fg at 1,
+// and its menu changes it.
+func (a *app) speedButton(c *ui.Context, fg, color, hover ui.Color) {
 	speed := a.pl.Speed()
-	color := p.muted
-	if speed != 1 {
-		color = p.accent
+	if speed == 1 {
+		color = fg
 	}
 	b := ui.ButtonBase(c.Key("speed")).Height(28).PaddingX(6).Radius(6).Label(T("Playback Speed")).Tooltip(T("Playback Speed"))
 	if b.Hovered() {
-		b.Background(p.hover)
+		b.Background(hover)
 	}
 	b.Children(func() {
 		ui.Text(c, speedLabel(speed)).FontSize(12).FontWeight(600).FontFeatures("tnum").TextColor(color)
