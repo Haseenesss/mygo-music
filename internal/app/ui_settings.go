@@ -395,6 +395,26 @@ func (a *app) settingsSections(c *ui.Context, p palette) []settingsSection {
 					a.changed()
 				}
 			})
+			// Only with a choice: more than one display, or one picked
+			// that is gone.
+			if ds := displays(); len(ds) > 1 || s.NotchDisplay != "" {
+				row(T("Display"), T("The screen it shows on, such as the built-in one with the notch while another is the main display"), func() {
+					picks := notchDisplayPicks(ds, s.NotchDisplayID, s.NotchDisplay)
+					labels := make([]string, len(picks))
+					at := 0
+					for i, p := range picks {
+						labels[i] = p.label
+						if p.chosen {
+							at = i
+						}
+					}
+					if i, ok := choice(c, "notch-display", T("Display"), labels, at); ok && !picks[i].gone {
+						s.NotchDisplayID, s.NotchDisplay = picks[i].id, picks[i].name
+						a.changed()
+						a.notch.locate()
+					}
+				})
+			}
 		})
 	}
 

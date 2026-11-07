@@ -13,9 +13,9 @@ type nsRect struct {
 type nsEdgeInsets struct{ Top, Left, Bottom, Right float64 }
 
 // notchSize returns the size of the camera housing of the display with the
-// menu bar in points, or false if it has none.
-func notchSize() (w, h float64, ok bool) {
-	s := menuBarScreen()
+// ID in points, or false if it has none.
+func notchSize(display int64) (w, h float64, ok bool) {
+	s := screenOf(display)
 	if s == 0 || !objc.Send[bool](s, objc.RegisterName("respondsToSelector:"), objc.RegisterName("safeAreaInsets")) {
 		return 0, 0, false
 	}
@@ -29,9 +29,10 @@ func notchSize() (w, h float64, ok bool) {
 	return frame.Size.W - left.Size.W - right.Size.W, insets.Top, true
 }
 
-// menuBarHeight returns the height of the menu bar of the display with it.
-func menuBarHeight() float64 {
-	s := menuBarScreen()
+// menuBarHeight returns the height of the menu bar of the display with the
+// ID, or 0 if it has none.
+func menuBarHeight(display int64) float64 {
+	s := screenOf(display)
 	if s == 0 {
 		return 0
 	}
@@ -82,10 +83,10 @@ func surfaceView(v objc.ID) objc.ID {
 }
 
 // pinToTop moves a window of w×h points to the top middle of the display
-// with the menu bar, over the menu bar, where AppKit would
-// not otherwise let a window go.
-func pinToTop(handle uintptr, w, h float64) {
-	screen := menuBarScreen()
+// with the ID, over its menu bar, where AppKit would not otherwise let a
+// window go.
+func pinToTop(handle uintptr, display int64, w, h float64) {
+	screen := screenOf(display)
 	if screen == 0 {
 		return
 	}
@@ -94,11 +95,21 @@ func pinToTop(handle uintptr, w, h float64) {
 	objc.ID(handle).Send(objc.RegisterName("setFrame:display:"), r, true)
 }
 
-// menuBarScreen returns the screen with the menu bar: the first.
-func menuBarScreen() objc.ID {
+// screenOf returns the screen of the display with the ID, or, when it is
+// gone, the one with the menu bar: the first.
+func screenOf(display int64) objc.ID {
 	screens := objc.ID(objc.GetClass("NSScreen")).Send(objc.RegisterName("screens"))
-	if objc.Send[uint](screens, objc.RegisterName("count")) == 0 {
+	count := objc.Send[uint](screens, objc.RegisterName("count"))
+	if count == 0 {
 		return 0
+	}
+	key := objc.ID(objc.GetClass("NSString")).Send(objc.RegisterName("stringWithUTF8String:"), "NSScreenNumber")
+	for i := range count {
+		s := screens.Send(objc.RegisterName("objectAtIndex:"), i)
+		num := s.Send(objc.RegisterName("deviceDescription")).Send(objc.RegisterName("objectForKey:"), key)
+		if num != 0 && int64(objc.Send[uint32](num, objc.RegisterName("unsignedIntValue"))) == display {
+			return s
+		}
 	}
 	return screens.Send(objc.RegisterName("objectAtIndex:"), uint(0))
 }
