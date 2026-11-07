@@ -340,6 +340,7 @@ func Run() error {
 		a.settings.applyAppearance()
 		i18n.SetLanguage(i18n.Resolve(a.settings.Language, systemLanguages()))
 		a.npPane = a.lyricsPaneChosen()
+		a.store.file = userDataDir("plugin-store.json")
 		a.makeSources()
 		// Before the window: on Windows it lays out its content as it is
 		// made, and the view asks the player what plays.

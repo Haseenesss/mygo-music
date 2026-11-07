@@ -1,7 +1,11 @@
 package app
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -25,19 +29,42 @@ func (a *app) pluginTabs(c *ui.Context) {
 // listPlugins lists the plugins on GitHub, by their topic; tests replace it.
 var listPlugins = plugin.Listed
 
-// pluginStore is what the store has of the plugins on GitHub, asked for once the
-// listener first looks, and again when they ask.
+// storeFresh is how long what GitHub listed serves before the store asks it
+// again by itself, kept between launches: its search allows 10 requests a
+// minute to a listener without a token, shared by all on the same network.
+// Refresh asks at once.
+const storeFresh = 6 * time.Hour
+
+// pluginStore is what the store has of the plugins on GitHub: what it listed
+// last, from the store's file, and anew once that's old, or the listener asks.
 type pluginStore struct {
 	listed []plugin.Listing
-	asked  bool // they were asked for, and came or failed
+	at     time.Time // when GitHub listed them
+	asked  bool      // they were asked for, or came from the file fresh
 	busy   bool
 	err    string
+	file   string // where they're kept between launches; none in tests
 }
 
-// loadStore asks GitHub for the plugins with the topic.
-func (a *app) loadStore() {
+// storeFile is what the store keeps of what GitHub listed.
+type storeFile struct {
+	At     time.Time        `json:"at"`
+	Listed []plugin.Listing `json:"listed"`
+}
+
+// loadStore shows what GitHub listed last, and asks it again if that's old,
+// or if again is set, as Refresh does. What went wrong asking leaves what was
+// listed before.
+func (a *app) loadStore(again bool) {
 	s := &a.store
 	if s.busy {
+		return
+	}
+	if s.listed == nil {
+		s.read()
+	}
+	if !again && s.listed != nil && time.Since(s.at) < storeFresh {
+		s.asked = true
 		return
 	}
 	s.busy, s.err = true, ""
@@ -49,9 +76,38 @@ func (a *app) loadStore() {
 				s.err = installError(err)
 				return
 			}
-			s.listed = listed
+			s.listed, s.at = listed, time.Now()
+			s.write()
 		})
 	}()
+}
+
+// read takes what the store kept, if it kept anything.
+func (s *pluginStore) read() {
+	if s.file == "" {
+		return
+	}
+	data, err := os.ReadFile(s.file)
+	if err != nil {
+		return
+	}
+	var f storeFile
+	if json.Unmarshal(data, &f) == nil && f.Listed != nil {
+		s.listed, s.at = f.Listed, f.At
+	}
+}
+
+// write keeps what GitHub listed, for the next launch.
+func (s *pluginStore) write() {
+	if s.file == "" {
+		return
+	}
+	data, err := json.Marshal(storeFile{At: s.at, Listed: s.listed})
+	if err != nil {
+		return
+	}
+	os.MkdirAll(filepath.Dir(s.file), 0o755)
+	os.WriteFile(s.file, data, 0o644)
 }
 
 // installedFrom is the library of the plugin installed from repo, if one is.
@@ -81,7 +137,7 @@ func (a *app) storeSettings(c *ui.Context, block settingsBlock, p palette) {
 	s := &a.store
 	block(T("Plugins on GitHub")+" "+plugin.Topic, func() {
 		if !s.asked && !s.busy {
-			a.loadStore()
+			a.loadStore(false)
 		}
 		ui.Row(c).Padding(12, 16).Gap(12).AlignItems(ui.Center).MinHeight(48).Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(3).Children(func() {
@@ -96,12 +152,44 @@ func (a *app) storeSettings(c *ui.Context, block settingsBlock, p palette) {
 				ui.Text(c, desc).FontSize(12).TextColor(p.muted).LineHeight(1.4)
 			})
 			if ui.Button(c.Key("refresh-store"), T("Refresh")).Disabled(s.busy).Clicked() {
-				a.loadStore()
+				a.loadStore(true)
 			}
 		})
 	})
-	in := &a.installer
+	var official, community []plugin.Listing
 	for _, l := range s.listed {
+		if plugin.Official(l.Repo) {
+			official = append(official, l)
+		} else {
+			community = append(community, l)
+		}
+	}
+	if len(official) > 0 {
+		block(T("Official Plugins"), func() {
+			a.storeHeading(c.Key("official"), T("Official Plugins"), T("Made by the author of MyGo Music"), p)
+		})
+		a.storeRows(c, block, official, p)
+	}
+	if len(community) > 0 {
+		block(T("Community Plugins"), func() {
+			a.storeHeading(c.Key("community"), T("Community Plugins"), T("Made by others, and not reviewed. See what each asks for before you install it."), p)
+		})
+		a.storeRows(c, block, community, p)
+	}
+}
+
+// storeHeading heads a part of the store's list.
+func (a *app) storeHeading(c *ui.Context, title, desc string, p palette) {
+	ui.Column(c).Padding(14, 16, 10, 16).Gap(3).Background(p.hover.Alpha(0.5)).Children(func() {
+		ui.Text(c, title).FontSize(12.5).FontWeight(600)
+		ui.Text(c, desc).FontSize(11.5).TextColor(p.muted).LineHeight(1.4)
+	})
+}
+
+// storeRows are the store's plugins, each with a way to install it.
+func (a *app) storeRows(c *ui.Context, block settingsBlock, listed []plugin.Listing, p palette) {
+	in := &a.installer
+	for _, l := range listed {
 		block(l.Repo+" "+l.Description, func() {
 			c := c.Key("listed-" + l.Repo)
 			_, name, _ := strings.Cut(l.Repo, "/")

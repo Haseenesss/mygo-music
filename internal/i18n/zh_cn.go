@@ -377,4 +377,9 @@ var zhCN = map[string]string{
 	"an hour ago":                                                   "1 小时前",
 	"just now":                                                      "刚刚",
 	"yesterday":                                                     "昨天",
+
+	"Official Plugins":                 "官方插件",
+	"Community Plugins":                "社区插件",
+	"Made by the author of MyGo Music": "MyGo Music 作者制作",
+	"Made by others, and not reviewed. See what each asks for before you install it.": "由其他开发者制作，未经审核。安装前请先看清它需要哪些权限。",
 }
