@@ -420,6 +420,16 @@ func (a *app) settingsSections(c *ui.Context, p palette) []settingsSection {
 				}
 			})
 		}
+		row(T("Previous Button"), T("Going back to the start of the song plays the one before in its first 3 seconds"), func() {
+			at := 0
+			if s.PrevRestarts {
+				at = 1
+			}
+			if i, ok := choice(c, "previous", T("Previous Button"), []string{N("Previous Song"), N("Start of This Song")}, at); ok {
+				s.PrevRestarts = i == 1
+				a.changed()
+			}
+		})
 		row(T("Even Out Loudness"), T("Adjust each song's volume by what its plugin measured of it, for them to sound as loud as each other"), func() {
 			if ui.Switch(c.Key("normalize"), &s.Normalize).Label(T("Even Out Loudness")).Changed() {
 				a.pl.SetVolume(a.volume)

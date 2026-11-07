@@ -369,4 +369,9 @@ var zhCN = map[string]string{
 	"an hour ago":                                                   "1 小时前",
 	"just now":                                                      "刚刚",
 	"yesterday":                                                     "昨天",
+
+	"Previous Button":    "上一首按钮",
+	"Previous Song":      "播放上一首",
+	"Start of This Song": "回到这首开头",
+	"Going back to the start of the song plays the one before in its first 3 seconds": "选择回到开头时，在一首歌的前 3 秒内按下仍会播放上一首",
 }
