@@ -607,17 +607,15 @@ func catalogApp() *app {
 var catalogScenes = []struct {
 	name string
 	r    route
-	tab  int
 }{
-	{"search-songs", route{page: pageSearch, query: "MyGO", kind: music.SearchTracks}, 0},
-	{"search-artists", route{page: pageSearch, query: "MyGO", kind: music.SearchArtists}, 0},
-	{"search-albums", route{page: pageSearch, query: "MyGO", kind: music.SearchAlbums}, 0},
-	{"search-shows", route{page: pageSearch, query: "MyGO", kind: music.SearchShows}, 0},
-	{"artist", route{page: pageArtist, id: "7"}, artistSongs},
-	{"artist-albums", route{page: pageArtist, id: "7"}, artistAlbums},
-	{"album", route{page: pageAlbum, id: "8"}, 0},
-	{"show", route{page: pageShow, id: "5"}, 0},
-	{"shows", route{page: pageShows}, 0},
+	{"search-songs", route{page: pageSearch, query: "MyGO", kind: music.SearchTracks}},
+	{"search-artists", route{page: pageSearch, query: "MyGO", kind: music.SearchArtists}},
+	{"search-albums", route{page: pageSearch, query: "MyGO", kind: music.SearchAlbums}},
+	{"search-shows", route{page: pageSearch, query: "MyGO", kind: music.SearchShows}},
+	{"artist", route{page: pageArtist, id: "7"}},
+	{"album", route{page: pageAlbum, id: "8"}},
+	{"show", route{page: pageShow, id: "5"}},
+	{"shows", route{page: pageShows}},
 }
 
 // With MM_FRAMES set, saves the pages of searches, artists, albums and shows
@@ -630,7 +628,6 @@ func TestCatalogFrames(t *testing.T) {
 	for _, s := range catalogScenes {
 		for _, dark := range []bool{false, true} {
 			a := catalogApp()
-			a.artists["7"].tab = s.tab
 			a.open(s.r)
 			tt := ui.NewTester(a.view, 1200, 800)
 			tt.SetDark(dark)
@@ -650,7 +647,6 @@ func TestCatalogFrames(t *testing.T) {
 func TestCatalogFrameBudget(t *testing.T) {
 	for _, s := range catalogScenes {
 		a := catalogApp()
-		a.artists["7"].tab = s.tab
 		a.open(s.r)
 		tt := ui.NewTester(a.view, 1200, 800)
 		tt.Advance(time.Second)

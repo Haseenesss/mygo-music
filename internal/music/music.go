@@ -25,6 +25,8 @@ type Album struct {
 	ImageURL string   `json:"imageUrl,omitempty"`
 	Artists  []Artist `json:"artists,omitempty"`
 	Released string   `json:"released,omitempty"` // as the source has it, such as 2024-03-01
+	// Kind is "album", "single" or "ep", for a source that tells them apart.
+	Kind string `json:"kind,omitempty"`
 	// Saved says the listener saved it, for a source with saveAlbum.
 	Saved bool `json:"saved,omitempty"`
 }
