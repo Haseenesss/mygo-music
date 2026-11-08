@@ -372,3 +372,27 @@ func TestShuffleOrderHead(t *testing.T) {
 		t.Errorf("picked song is at %v", p.order)
 	}
 }
+
+// unset is a source that can't play until the listener sets something up,
+// which it says how to do.
+type unset struct{ nothing }
+
+func (unset) Stream(string, string) (*music.Stream, error) {
+	return nil, music.Fail(music.ErrSetup, "Install ffmpeg to play these")
+}
+
+// A source that needs setting up says what to do in its own words. The player
+// used to say only that it needed setting up, which told nobody to install
+// ffmpeg (egoist/mygo-music-youtube-music#3).
+func TestSetupSaysWhatTheSourceSaid(t *testing.T) {
+	ch := make(chan func(), 64)
+	p := New(func(fn func()) { ch <- fn })
+	defer p.stop()
+	p.SetVolume(0)
+	p.Source = func(string) music.Source { return unset{} }
+	p.PlayTrack([]music.Track{{ID: "a", Source: "s"}, {ID: "b", Source: "s"}}, 0)
+	settle(t, ch, p)
+	if p.Err() != "Install ffmpeg to play these" || p.Playing() {
+		t.Fatalf("err %q, playing %v", p.Err(), p.Playing())
+	}
+}
